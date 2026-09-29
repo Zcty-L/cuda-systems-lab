@@ -13,8 +13,6 @@
 | `tests/` | 跨模块正确性和集成测试 |
 | `docs/` | 方法、架构笔记和实验报告 |
 
-`vector_add` 给出了算子实现、正确性测试和性能基准的完整构建方式。
-
 ## 构建与测试
 
 需要 CMake 3.24+、支持的 NVIDIA GPU 和 CUDA Toolkit。默认使用当前 GPU 架构；交叉编译时可设置 `CMAKE_CUDA_ARCHITECTURES`。
@@ -31,13 +29,21 @@ ctest --test-dir build --output-on-failure
 cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=120
 ```
 
-`vector_add` 可通过 `build/tests/vector_add_test` 验证，通过 `build/benchmarks/operators/vector_add_bench` 测量。微基准分别记录 GPU 型号、SM、CUDA 版本、输入配置、计时范围和原始结果。
+## 算子入口
+
+可执行文件分别位于 `build/tests/` 和 `build/benchmarks/operators/`。
+
+| 算子 | 正确性测试 | 性能基准 |
+| --- | --- | --- |
+| [vector_add](ops/vector_add/) | `vector_add_test` | `vector_add_bench` |
+
+测量规范见 [benchmarks](benchmarks/README.md)，报告见 [文档索引](docs/README.md)。
 
 ## 新内容放在哪里
 
 - 要被其他代码调用的实现放 `ops/{name}/`，正确性测试放 `tests/` 或模块内。
 - 测带宽、延迟、吞吐或算子对比的程序放 `benchmarks/`。
 - 为理解一条指令或一个架构机制写的最小程序放 `studies/`。
-- 正式文档只放 `docs/`；对应原始结果和运行命令一起保存。
+- 正式文档按 `docs/<大类>/<主题>/<文档>.md` 归档；分类与索引见 [文档规则](docs/README.md)。
 
 贡献与分支约定见 [AGENTS.md](AGENTS.md)。

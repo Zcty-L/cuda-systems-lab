@@ -3,4 +3,6 @@ dist/
 __pycache__/
 
 *.so
+*.csv
+*.tsv
 *.egg-info/
