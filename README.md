@@ -36,6 +36,7 @@ cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=120
 | 算子 | 正确性测试 | 性能基准 |
 | --- | --- | --- |
 | [vector_add](ops/vector_add/) | `vector_add_test` | `vector_add_bench` |
+| [softmax](ops/softmax/README.md) | `softmax_test` | `softmax_bench`、`softmax_cluster_bench` |
 
 测量规范见 [benchmarks](benchmarks/README.md)，报告见 [文档索引](docs/README.md)。
 
