@@ -46,3 +46,7 @@ docs/
 ### 基准测试
 
 - 公共方法：[Roofline 指标与判断](benchmarks/methodology/roofline.md)
+
+### 算子优化
+
+- Softmax：[导入基线](operators/softmax/baseline.md)、[block 与 online 实现](operators/softmax/block-online.md)、[AI 计算说明](operators/softmax/arithmetic-intensity.md)、[Roofline 分析](operators/softmax/roofline.md)、[行数与并行度](operators/softmax/row-scaling.md)、[Cluster 对照](operators/softmax/cluster.md)

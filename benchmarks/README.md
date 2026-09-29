@@ -16,3 +16,4 @@
 | 算子 | 基准 | 分析与报告 |
 | --- | --- | --- |
 | Vector Add | [vector_add_bench.cu](operators/vector_add_bench.cu) | — |
+| Softmax | [基础](operators/softmax_bench.cu) · [Cluster 对照](operators/softmax_cluster_bench.cu) | [NCU 脚本](operators/softmax_roofline.py) · [Roofline](../docs/operators/softmax/roofline.md) · [Cluster](../docs/operators/softmax/cluster.md) |
