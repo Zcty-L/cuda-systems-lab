@@ -11,6 +11,7 @@
 | `studies/` | PTX、TMA、cp.async、cluster 等最小验证实验 |
 | `include/cuda_lab/` | 公共工具及可复用的 PTX wrapper |
 | `tests/` | 跨模块正确性和集成测试 |
+| `tools/` | 设备查询等公共辅助工具 |
 | `docs/` | 方法、架构笔记和实验报告 |
 
 ## 构建与测试
@@ -31,6 +32,8 @@ cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=120
 
 ## 算子入口
 
+设备信息查询：构建后运行 `./build/tools/device_query`，输出设备、SM、存储层次与执行限制。详见[设备查询指南](docs/guides/device-query/usage.md)。
+
 可执行文件分别位于 `build/tests/` 和 `build/benchmarks/operators/`。
 
 | 算子 | 正确性测试 | 性能基准 |
@@ -45,6 +48,7 @@ cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=120
 - 要被其他代码调用的实现放 `ops/{name}/`，正确性测试放 `tests/` 或模块内。
 - 测带宽、延迟、吞吐或算子对比的程序放 `benchmarks/`。
 - 为理解一条指令或一个架构机制写的最小程序放 `studies/`。
+- 设备查询等公共辅助程序放 `tools/`。
 - 正式文档按 `docs/<大类>/<主题>/<文档>.md` 归档；分类与索引见 [文档规则](docs/README.md)。
 
 贡献与分支约定见 [AGENTS.md](AGENTS.md)。

@@ -26,6 +26,7 @@
 ## 验证与测量
 
 - 新算子至少包含正确性测试；基准测试记录配置、设备、计时范围、结果和运行命令。
+- 开始 GPU 性能测量或架构相关实验前，运行 `./build/tools/device_query` 确认设备与计算能力；构建方法和输出口径见设备查询指南 (docs/guides/device-query/usage.md)。
 - 基准配置遵循 [benchmarks/README.md](benchmarks/README.md)，公共方法与算子报告的划分遵循 [文档规则](docs/README.md)。
 - 测试输出包含配置、主要阶段、关键结果、`[SUCCESS]` 标记；不同测试与主要阶段之间留空行。
 - 优化前记录正确性和性能基线；同一设备、输入和计时方法下比较结果。算子基线与优化报告统一保存在 `docs/operators/{name}/`。

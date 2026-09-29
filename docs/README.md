@@ -39,6 +39,10 @@ docs/
 
 ## 文档索引
 
+### 使用指南
+
+- 公共工具：[设备查询](guides/device-query/usage.md)
+
 ### 基准测试
 
 - 公共方法：[Roofline 指标与判断](benchmarks/methodology/roofline.md)
