@@ -17,3 +17,7 @@
 | --- | --- | --- |
 | Vector Add | [vector_add_bench.cu](operators/vector_add_bench.cu) | — |
 | Softmax | [基础](operators/softmax_bench.cu) · [Cluster 对照](operators/softmax_cluster_bench.cu) | [NCU 脚本](operators/softmax_roofline.py) · [Roofline](../docs/operators/softmax/roofline.md) · [Cluster](../docs/operators/softmax/cluster.md) |
+
+## 存储测量入口
+
+[存储微基准](memory/README.md)：shared memory、L1、L2、DRAM 的带宽与延迟，共 8 项；[导入报告](../docs/benchmarks/memory/baseline.md)记录配置、计时范围和验证结果。

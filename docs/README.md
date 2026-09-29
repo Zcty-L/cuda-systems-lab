@@ -44,6 +44,7 @@ docs/
 - 公共工具：[设备查询](guides/device-query/usage.md)
 
 ### 基准测试
+- 存储微基准：[导入与验证](benchmarks/memory/baseline.md)
 
 - 公共方法：[Roofline 指标与判断](benchmarks/methodology/roofline.md)
 

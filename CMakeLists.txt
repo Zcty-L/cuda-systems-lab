@@ -17,6 +17,7 @@ include(CTest)
 add_subdirectory(ops/vector_add)
 add_subdirectory(ops/softmax)
 add_subdirectory(benchmarks/operators)
+add_subdirectory(benchmarks/memory)
 add_subdirectory(tools)
 
 if(BUILD_TESTING)
