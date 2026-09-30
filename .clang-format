@@ -13,6 +13,10 @@ AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 
+# 定义之间自动留空行；函数内部手动划分的逻辑段最多保留一个空行。
+SeparateDefinitionBlocks: Always
+MaxEmptyLinesToKeep: 1
+
 BinPackParameters: true
 BinPackArguments: true
 SpaceBeforeParens: Never
