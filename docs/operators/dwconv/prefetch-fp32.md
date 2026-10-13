@@ -1,4 +1,4 @@
-# DWConv FP32：prefetch 与 baseline
+# DWConv FP32：baseline 与 prefetch 对比
 
 > 当前 FP32 baseline 已删除循环内冗余同步，和 prefetch 一样仅在权重初始化后同步。下文保留修改前的历史测量，不代表当前版本性能。
 
@@ -91,8 +91,10 @@
 ```bash
 cmake --build build --target dwconv_test dwconv_bench -j 8
 ./build/tools/device_query
-ctest --test-dir build -R '^dwconv(_prefetch)?_test$' --output-on-failure
-compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/dwconv_test --prefetch-only
+ctest --test-dir build -R '^dwconv_test$' --output-on-failure
+compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/dwconv_test --kernel prefetch --check-cpu --warmup 0 --iterations 1
 ./build/benchmarks/operators/dwconv_bench --large-batch
 ncu --set full --clock-control none ./build/benchmarks/operators/dwconv_bench --profile
 ```
+
+另见 [FP16 prefetch 对比](prefetch-fp16.md)。

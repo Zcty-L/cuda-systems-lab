@@ -1,10 +1,10 @@
 # FP32 baseline 与输入预取范围测量
 
-本文保留重写前版本的历史结果；当前实现与新测量见[prefetch 与 baseline 对比](prefetch-matched.md)。
+本文保留重写前版本的历史结果；当前实现与新测量见[FP32 prefetch 与 baseline 对比](prefetch-fp32.md)。
 
 测量日期：2026-10-10。当前 `feature/dwconv` 工作树，未提交版本。只测量既有 kernel，没有修改计算实现。
 
-后续的同机器码驻留限制实验、NCU 与 SASS 证据见[原因诊断](prefetch-matched.md)。下文的寄存器解释仅是初步假设；后续验证显示 7×7/11×11 的退化不能主要归因于 blocks/SM 下降。
+后续的同机器码驻留限制实验、NCU 与 SASS 证据见[原因诊断](prefetch-fp32.md)。下文的寄存器解释仅是初步假设；后续验证显示 7×7/11×11 的退化不能主要归因于 blocks/SM 下降。
 
 ## 结论
 

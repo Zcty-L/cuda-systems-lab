@@ -1,4 +1,6 @@
-# DWConv FP16：baseline 与 prefetch 测量
+# DWConv FP16：baseline 与 prefetch 对比
+
+> 以下数据来自历史 FP16 累加版本。当前 baseline/prefetch 已改为 FP32 FMA 累加、写回时舍入到 FP16；旧性能数据不代表当前版本，需重新测量。
 
 两次扫描中，小输入 `N=1,C=32,H=W=28` 的 prefetch 中位耗时降低约 12%–20%；大 batch 收益明显缩小，不能作为普遍更快的替代：
 
@@ -31,9 +33,9 @@
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target dwconv_fp16_bench dwconv_fp16_test -j 8
+cmake --build build --target dwconv_fp16_bench dwconv_test -j 8
 ./build/tools/device_query
-ctest --test-dir build -R '^dwconv_fp16_test$' --output-on-failure
+./build/tests/dwconv_test --dtype fp16 --kernel all --check-cpu --warmup 0 --iterations 1
 mkdir -p build/dwconv-fp16-prefetch
 ./build/benchmarks/operators/dwconv_fp16_bench > build/dwconv-fp16-prefetch/run1.log
 ./build/benchmarks/operators/dwconv_fp16_bench > build/dwconv-fp16-prefetch/run2.log
@@ -99,3 +101,23 @@ C=64、H=W=128、stride=1；下表为各扫描 10 轮的最小–最大耗时。
 | 32 | 7 | 2 | 2091.44–3139.59 | 2107.86–3239.06 |
 | 32 | 11 | 1 | 4430.84–6057.40 | 4373.49–5947.15 |
 | 32 | 11 | 2 | 4448.47–6201.23 | 4415.53–6333.76 |
+
+## FP32 累加版本正确性验证
+
+当前 `dwconv_fp16.cu` 的 baseline（k32/k64/k128）及 prefetch 使用 `float2` 累加器，bias 转为 FP32 初始化，输入与权重转换后逐 tap 执行 FP32 FMA，写回时使用 `__float2half_rn`。存储布局及加载策略保持不变；opt 的通用、单通道对及共享输入路径也已统一为相同的 FP32 累加策略。
+
+RTX 5070 Ti Laptop（SM120）上，经 CMake 构建，针对 case 5、7、22、8（5×5、3×3、7×7、11×11，含矩形输入、padding 和输出尾块）执行以下校验，共 41 个兼容组合全部通过。baseline、prefetch 和 PyTorch 前向均与同一个 FP32 FMA、最终 half 舍入的 CPU 参考完全一致。本次未进行性能对比。
+
+```bash
+./build/tools/device_query
+cmake --build build --target dwconv_test -j 8
+for id in 5 7 22 8; do
+  ./build/tests/dwconv_test --case "$id" --kernel all --dtype fp16 --check-cpu --warmup 0 --iterations 1
+done
+```
+
+原始日志：`build/dwconv-fp32-acc-case-{5,7,22,8}.log`。
+
+opt 同步修改后，按相同命令复验 case 5、7、22、8，并增加 case 26（3×3）、401 和 402（9×9 的单通道对与共享输入分派）。7 组配置共 70 个兼容组合全部通过；opt、baseline、prefetch 和 PyTorch 前向均与 FP32 累加参考完全一致。日志为 `build/dwconv-opt-fp32-acc-case-{5,7,22,8,26,401,402}.log`，未重新测速。
+
+另见 [FP32 prefetch 对比](prefetch-fp32.md)。

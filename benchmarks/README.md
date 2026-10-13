@@ -16,8 +16,15 @@
 | 算子 | 基准 | 分析与报告 |
 | --- | --- | --- |
 | Vector Add | [vector_add_bench.cu](operators/vector_add_bench.cu) | — |
-| DWConv | [FP32 版本对比及诊断](operators/dwconv_bench.cu) · [FP16 基准](operators/dwconv_fp16_bench.cu) · [权重缓存](operators/dwconv_weights_bench.cu) · [FP32 opt](operators/dwconv_opt_bench.cu) · [bias 加载](operators/dwconv_bias_bench.cu) · [cuDNN 融合](operators/dwconv_cudnn_bench.py) | [输入预取范围测量](../docs/operators/dwconv/prefetch-benchmark.md) · [FP32 prefetch 与 baseline 对比](../docs/operators/dwconv/prefetch-matched.md) · [FP16 报告](../docs/operators/dwconv/fp16-prefetch.md) · [权重缓存报告](../docs/operators/dwconv/weights-cache.md) · [FP32 opt 报告](../docs/operators/dwconv/opt-fp32.md) · [cuDNN 融合与布局对比](../docs/operators/dwconv/cudnn-fusion.md) |
+| DWConv | [FP32 版本对比及诊断](operators/dwconv_bench.cu) · [FP16 基准](operators/dwconv_fp16_bench.cu) · [权重缓存](operators/dwconv_weights_bench.cu) · [FP32 opt](operators/dwconv_opt_bench.cu) · [bias 加载](operators/dwconv_bias_bench.cu) · [cuDNN 融合](operators/dwconv_cudnn_bench.py) | [输入预取范围测量](../docs/operators/dwconv/prefetch-benchmark.md) · [FP32 prefetch 与 baseline 对比](../docs/operators/dwconv/prefetch-fp32.md) · [FP16 报告](../docs/operators/dwconv/prefetch-fp16.md) · [权重缓存报告](../docs/operators/dwconv/weights-cache.md) · [FP32 opt 报告](../docs/operators/dwconv/opt-fp32.md) · [cuDNN 融合与布局对比](../docs/operators/dwconv/cudnn-fusion.md) · [FP32 全量对比](../docs/operators/dwconv/fp32-full.md) · [FP16 全量对比](../docs/operators/dwconv/fp16-full.md) |
 | Softmax | [基础](operators/softmax_bench.cu) · [Cluster 对照](operators/softmax_cluster_bench.cu) | [NCU 脚本](operators/softmax_roofline.py) · [Roofline](../docs/operators/softmax/roofline.md) · [Cluster](../docs/operators/softmax/cluster.md) |
+
+DWConv 结果绘图脚本：[dwconv_plot.py](operators/dwconv_plot.py)。按 H、C 排列子图，横轴为 batch size，纵轴为 TFLOPs/s；正式结果与图片归档到 [DWConv 实验目录](../docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/README.md)。默认使用 Times New Roman，WSL 下自动读取 Windows 字体，也可通过 `--font-file` 指定字体文件。
+
+```bash
+conda activate py311
+python benchmarks/operators/dwconv_plot.py --csv docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/fp32/comparison.csv --dtype fp32 --k 11 --output docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/fp32/plots/benchmark_fp32_k11.png
+```
 
 ## 存储测量入口
 

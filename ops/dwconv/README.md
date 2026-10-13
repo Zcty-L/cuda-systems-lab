@@ -77,7 +77,7 @@ CMake 默认 `DWCONV_TEST_CUDNN=ON`；缺少开发库时其余实现仍可构建
 
 ## FP16 基线
 
-另提供 `launch_prefetch_fp16_k128`，约束与 k128 baseline 相同。权重一次加载至 2 KiB shared，输入使用两套 `half2[4][4]` 寄存器片段，按“加载 A → 加载 B → 计算 A → 加载下一 A → 计算 B”预取。保留 baseline 的地址计算、边界判断、bias 初始化与逐 tap FP32 FMA 顺序；只在初始化权重后同步。该版本接入全部 19 组 FP16 正确性用例，测量结果见 [FP16 prefetch 报告](../../docs/operators/dwconv/fp16-prefetch.md)。
+另提供 `launch_prefetch_fp16_k128`，约束与 k128 baseline 相同。权重一次加载至 2 KiB shared，输入使用两套 `half2[4][4]` 寄存器片段，按“加载 A → 加载 B → 计算 A → 加载下一 A → 计算 B”预取。保留 baseline 的地址计算、边界判断、bias 初始化与逐 tap FP32 FMA 顺序；只在初始化权重后同步。该版本接入全部 19 组 FP16 正确性用例，测量结果见 [FP16 prefetch 报告](../../docs/operators/dwconv/prefetch-fp16.md)。
 
 `dwconv_fp16.cu` 参考 `/home/if/Codes/CUDAOP/op/dwconv/dwconv_fp16_common.cuh` 中 `UseBiasShuffle=true` 路径，提供自动分派和三个固定容量入口：
 
@@ -126,7 +126,7 @@ cmake --build build --target dwconv_test --parallel
 | FP32 | 3×3、5×5 使用尺寸特化；7×7 在 grouped blocks 小于 104 时使用单通道 kernel，否则使用四通道特化；11×11 在动态共享内存不超过 48 KiB 时使用 16×16 共享输入 tile；其余走通用 kernel |
 | FP16 | 3×3、5×5、7×7 使用单通道对 kernel；9×9 在 pair blocks 至少为 140 且共享内存不超过 48 KiB 时使用共享输入 tile，否则使用单通道对；11×11 在共享内存允许时使用共享输入 tile，否则使用四通道对特化；其余走通用 kernel |
 
-上述阈值来自原文件。FP32 测量见 [opt 与 baseline 对比](../../docs/operators/dwconv/opt-fp32.md)
+上述阈值来自原文件。FP32 测量见 [opt 与 baseline 对比](../../docs/operators/dwconv/opt-fp32.md)；FP16 全量测量见 [FP16 全量测试](../../docs/operators/dwconv/fp16-full.md)。
 
 此前统一 `dwconv_test` 使用原 17 组 FP32、19 组 FP16 配置，合并去重后运行全部兼容的 baseline 和 opt。新增用例覆盖 3/5/7/9/11 尺寸分派、FP32 grouped blocks=100/104、FP16 pair blocks=136/140、共享输入 tile 的边界与 stride=1/2，以及 stride=3 时超出 48 KiB 的回退。当时的 FP16 累加版本与逐步 half 舍入 CPU 参考结果数值完全一致；当前 opt 已统一为 FP32 FMA 累加、写回时舍入到 FP16。
 
@@ -166,7 +166,7 @@ cmake --build build --target dwconv_test --parallel
 
 验证命令：`./build/tests/dwconv_test --kernel prefetch --check-cpu --warmup 0 --iterations 1`。新增版本已通过全部 17 组配置。此前 k32 累加器初始化问题已由用户修复，2026-10-10 完整 `dwconv_test` 复测通过。
 
-`dwconv_bench` 比较 baseline 和 prefetch。实现差别、性能数据和原因分析见[FP32 prefetch 与 baseline 对比](../../docs/operators/dwconv/prefetch-matched.md)。`--large-batch` 覆盖 N=8/16/32、H=W=128；`--profile` 仅执行两个版本单次启动，供 NCU 采集。
+`dwconv_bench` 比较 baseline 和 prefetch。实现差别、性能数据和原因分析见[FP32 prefetch 与 baseline 对比](../../docs/operators/dwconv/prefetch-fp32.md)。`--large-batch` 覆盖 N=8/16/32、H=W=128；`--profile` 仅执行两个版本单次启动，供 NCU 采集。
 
 ## 权重缓存实验
 
@@ -175,3 +175,5 @@ cmake --build build --target dwconv_test --parallel
 `dwconv_weights_bench` 默认比较 baseline、gmem、gmem_l2，两个版本均报告相对 baseline 的耗时变化。`--k3` 单测 N=16/C=64/H=W=128/K=3；`--profile`、`--profile-k3` 分别执行 K=7、K=3 的三版单次启动，供 NCU 采集。`dwconv_test` 覆盖两个计算入口，基准程序另外校验启用缓存策略后的结果。详见[权重缓存报告](../../docs/operators/dwconv/weights-cache.md)。
 
 FP32 opt 的 bias 直接读取与 warp shuffle 广播对照入口为 `dwconv_bias_bench`。
+
+完整 shape 集合的 cuDNN、baseline、PyTorch、opt 对比见 [FP32 全量测试](../../docs/operators/dwconv/fp32-full.md) 和 [FP16 全量测试](../../docs/operators/dwconv/fp16-full.md)，运行入口为 [dwconv_full_bench.py](../../benchmarks/operators/dwconv_full_bench.py)。
