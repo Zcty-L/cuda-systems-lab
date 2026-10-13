@@ -67,6 +67,44 @@ ctest --test-dir build -R '^dwconv(_fp16)?_test$' --output-on-failure
 
 FP16 原始基线测试包含 11 组配置，分别运行容量范围内的基线，共 27 次 kernel 验证，覆盖多 batch、多通道组、padding、stride、输出尾块、非整除 4 的 tap 数和 32/64/128 容量边界。CPU 从未打包的权重独立计算，用 double FMA 后逐步舍入到 half 模拟 FP16 累加，并要求结果数值完全一致；使用非整齐二进制输入值覆盖舍入行为。已通过正确性验证，未进行性能测量。
 
+## 导入的 opt 实现
+
+从 `/home/if/Codes/CUDAOP/op/dwconv/opt_conv2d_groups_fp32.cu` 和 `opt_conv2d_groups_fp16.cu` 提取 kernel 及完整 launch 分派逻辑，分别保存在 `dwconv_opt_fp32.cu` 和 `dwconv_opt_fp16.cu` 中，由 `cuda_ops_dwconv` 构建。原文件中的独立 main、计时、CSV、cuDNN 和 CPU 工具依赖未引入。
+
+公共接口位于 `dwconv_opt.cuh`：
+
+- `launch_opt_fp32(inputs, weights, bias, outputs, param, n, stream = nullptr)`：连续 NCHW FP32，权重为 `[C, KhKw]`，`C % 4 == 0`。
+- `launch_opt_fp16(inputs, packed_weights, bias, outputs, param, n)`：连续 NCHW FP16，权重配对方式与 FP16 baseline 相同，`C % 8 == 0`。
+
+两者要求 `groups = in_ch = out_ch`、dilation 为 1、`1 <= KhKw <= 128`，参数及派生尺寸有效，FP32 使用指定流（默认流为默认值），FP16 使用默认流异步启动，由调用方检查错误和同步。FP32、FP16 均直接从全局内存读取 bias 初始化累加器，不再通过 shared memory 广播 bias；FP16 使用 FP32 FMA 累加，写回时舍入到 FP16。shared-input 的动态共享内存大小同步移除 bias 空间，48 KiB 分派上限保留；FP32 的 `ldg32_nc_0` 调用映射到仓库中等价的 32 位 `ldg_nc_0` wrapper。
+
+| 版本 | 原始分派策略 |
+| --- | --- |
+| FP32 | 3×3、5×5 使用尺寸特化；7×7 在 grouped blocks 小于 104 时使用单通道 kernel，否则使用四通道特化；11×11 在动态共享内存不超过 48 KiB 时使用 16×16 共享输入 tile；其余走通用 kernel |
+| FP16 | 3×3、5×5、7×7 使用单通道对 kernel；9×9 在 pair blocks 至少为 140 且共享内存不超过 48 KiB 时使用共享输入 tile，否则使用单通道对；11×11 在共享内存允许时使用共享输入 tile，否则使用四通道对特化；其余走通用 kernel |
+
+上述阈值来自原文件。
+
+
+## PyTorch 原生 FP32/FP16 前向与反向
+
+`dwconv_pytorch.cu` 抽离并简化自 PyTorch 提交 `9a3eac3b8ffba6e54e61df7ebecfb0afcc5e5a74` 的 [DepthwiseConv2d.cu](https://github.com/pytorch/pytorch/blob/9a3eac3b8ffba6e54e61df7ebecfb0afcc5e5a74/aten/src/ATen/native/cuda/DepthwiseConv2d.cu)。版权声明及许可保存在 [PYTORCH-LICENSE](PYTORCH-LICENSE)。仅依赖 CUDA Runtime，不依赖 PyTorch、ATen 或 cuDNN。
+
+接口见 `dwconv_pytorch.cuh`：
+
+- `launch_pytorch_forward_fp32(input, weight, bias, output, param, n, stream)`，bias 可为空。
+- `launch_pytorch_backward_fp32(input, weight, grad_output, grad_input, grad_weight, grad_bias, param, n, stream)`，三个梯度输出可分别为空，全部为空时不启动 kernel。
+
+FP16 对应接口为 `launch_pytorch_forward_fp16` 和 `launch_pytorch_backward_fp16`，所有数据指针使用 `__half`。权重仍为普通 `[C,Kh,Kw]`，无需 baseline 的 half2 配对；沿用上游 Half 的 FP32 乘加、共享内存及 shuffle 归约，写回时舍入到 FP16。db 也使用这一精度策略。
+
+沿用 `Conv2DParam`，连续 NCHW FP32 或 FP16，权重 `[C,Kh,Kw]`，通道倍增为 1、dilation 为 1。支持任意正通道数，没有 4/8 通道对齐或核面积 128 的限制。尺寸与 stride 必须为正，padding 非负，所有尺寸、坐标、索引及循环中间值须在有符号 32 位范围内，派生字段与输出公式一致；接口不进行参数校验。指针不得重叠。调用方负责启动错误检查与同步。
+
+保留上游 generic 前向的有效核边界裁剪、通用 dX gather，以及 dK 的 warp 按 batch 分工和 block 内归约。保留 FP32/FP16 类型模板，删除 dilation、通道倍增与核尺寸特化，使用固定 256 线程；ATen accessor 替换为裸指针，block 归约替换为简单 shuffle 和共享内存实现。这是简化移植版，不能据此推断完整 PyTorch 的性能。db 是本地补充的归约路径，并非从上游该文件抽离。
+
+输出均覆盖写入，不需要清零或工作区，不使用全局原子加。只计算 dX 时 input 可为空；只计算 dK 时 weight 可为空；只计算 db 时 input、weight 均可为空。db 表示假设存在逐通道加性偏置时的梯度；无偏置层通常直接传空 grad_bias。
+
+
+
 ## FP32 输入寄存器预取
 
 `dwconv.cu` 中的 `conv2d_4x128x256_groups_kernel_prefetch`，声明位于 `dwconv.cuh`，调用约束及 grid/block 与 k128 baseline 相同，原有 kernel 保留。
