@@ -10,7 +10,7 @@ void launch_baseline_fp16(const __half *inputs, const __half2 *packed_weights, c
 void launch_prefetch_fp16_k128(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
                                const Conv2DParam &param, int n, cudaStream_t stream = nullptr);
 
-// FP16 NCHW depthwise 卷积，half2 FMA 累加；C 为 8 的倍数，dilation = 1。
+// FP16 NCHW depthwise 卷积，FP32 FMA 累加、写回时舍入到 FP16；C 为 8 的倍数，dilation = 1。
 // packed_weights[pair * KhKw + k] = half2(weights[2*pair, k], weights[2*pair+1, k])。
 // 三个入口分别要求 1 <= KhKw <= 128 / 64 / 32，派生尺寸由调用者正确填写。
 void launch_baseline_fp16_k128(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
