@@ -89,4 +89,56 @@ __device__ __forceinline__ void stg128_cs(const T &reg0, const T &reg1, const T 
                    "l"(ptr)
                  : "memory");
 }
+
+// 指令：ld.global.nc（含 L2::128B 提示）
+// 来源：https://docs.nvidia.com/cuda/parallel-thread-execution/
+// 用途：dwconv 的权重加载、越界补零及共享内存权重读写。
+template <typename T> __device__ __forceinline__ void ldg_nc_0(T &reg, const void *ptr, bool guard)
+{
+    static_assert(sizeof(T) == 4, "ldg_nc_0 requires 4-byte type");
+    asm volatile("{.reg .pred p;\n"
+                 " setp.ne.b32 p, %2, 0;\n"
+                 " @!p mov.b32 %0, 0;\n"
+#if __CUDA_ARCH__ >= 750
+                 " @p ld.global.nc.L2::128B.b32 %0, [%1];\n"
+#else
+                 " @p ld.global.nc.b32 %0, [%1];\n"
+#endif
+                 "}"
+                 : "=r"(*reinterpret_cast<unsigned *>(&reg))
+                 : "l"(ptr), "r"((int)guard));
+}
+
+// 指令：ld.shared.v4.b32
+// 来源：https://docs.nvidia.com/cuda/parallel-thread-execution/
+// 用途：dwconv 的权重加载、越界补零及共享内存权重读写。
+template <typename T> __device__ __forceinline__ void lds128(T &reg0, T &reg1, T &reg2, T &reg3, const uint32_t &addr)
+{
+    static_assert(sizeof(T) == 4, "lds128 registers must be 4-byte types");
+    asm volatile("ld.shared.v4.b32 {%0, %1, %2, %3}, [%4];"
+                 : "=r"(*reinterpret_cast<unsigned *>(&reg0)), "=r"(*reinterpret_cast<unsigned *>(&reg1)),
+                   "=r"(*reinterpret_cast<unsigned *>(&reg2)), "=r"(*reinterpret_cast<unsigned *>(&reg3))
+                 : "r"(addr));
+}
+
+// 指令：st.shared.b32
+// 来源：https://docs.nvidia.com/cuda/parallel-thread-execution/
+// 用途：dwconv 的权重加载、越界补零及共享内存权重读写。
+template <typename T> __device__ __forceinline__ void sts32(const T &reg0, const uint32_t &addr)
+{
+    static_assert(sizeof(T) == 4, "sts32 requires 4-byte type");
+    asm volatile("st.shared.b32 [%0], %1;" : : "r"(addr), "r"(*reinterpret_cast<const unsigned *>(&reg0)));
+}
+
+// 指令：st.shared.v2.b32
+// 来源：https://docs.nvidia.com/cuda/parallel-thread-execution/
+// 用途：dwconv 的权重加载、越界补零及共享内存权重读写。
+template <typename T> __device__ __forceinline__ void sts64(const T &reg0, const T &reg1, const uint32_t &addr)
+{
+    static_assert(sizeof(T) == 4, "sts64 registers must be 4-byte types");
+    asm volatile("st.shared.v2.b32 [%0], {%1, %2};"
+                 :
+                 : "r"(addr), "r"(*reinterpret_cast<const unsigned *>(&reg0)),
+                   "r"(*reinterpret_cast<const unsigned *>(&reg1)));
+}
 } // namespace ptx

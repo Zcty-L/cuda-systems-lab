@@ -12,3 +12,19 @@ target_link_libraries(softmax_bench PRIVATE cuda_ops_softmax CUDA::cudart)
 
 add_executable(softmax_cluster_bench softmax_cluster_bench.cu)
 target_link_libraries(softmax_cluster_bench PRIVATE cuda_ops_softmax CUDA::cudart)
+
+add_executable(dwconv_bench dwconv_bench.cu)
+target_link_libraries(dwconv_bench PRIVATE cuda_ops_dwconv CUDA::cudart)
+
+add_executable(dwconv_fp16_bench dwconv_fp16_bench.cu)
+target_link_libraries(dwconv_fp16_bench PRIVATE cuda_ops_dwconv CUDA::cudart)
+
+add_executable(dwconv_weights_bench dwconv_weights_bench.cu)
+target_link_libraries(dwconv_weights_bench PRIVATE cuda_ops_dwconv CUDA::cudart)
+
+add_executable(dwconv_opt_bench dwconv_opt_bench.cu)
+target_link_libraries(dwconv_opt_bench PRIVATE cuda_ops_dwconv CUDA::cudart)
+
+add_executable(dwconv_bias_bench dwconv_bias_bench.cu)
+target_include_directories(dwconv_bias_bench PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(dwconv_bias_bench PRIVATE CUDA::cudart)

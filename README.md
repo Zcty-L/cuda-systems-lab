@@ -40,6 +40,7 @@ cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=120
 | --- | --- | --- |
 | [vector_add](ops/vector_add/) | `vector_add_test` | `vector_add_bench` |
 | [softmax](ops/softmax/README.md) | `softmax_test` | `softmax_bench`、`softmax_cluster_bench` |
+| [dwconv](ops/dwconv/README.md) | `dwconv_test` | `dwconv_bench`、`dwconv_fp16_bench`、`dwconv_opt_bench` |
 
 存储微基准：[运行入口](benchmarks/memory/README.md) · [导入报告](docs/benchmarks/memory/baseline.md)，可执行文件位于 `build/benchmarks/memory/`。
 
