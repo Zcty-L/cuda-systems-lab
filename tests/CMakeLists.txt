@@ -14,9 +14,10 @@ add_test(NAME softmax_test COMMAND softmax_test)
 
 add_executable(dwconv_test dwconv_test.cu)
 target_link_libraries(dwconv_test PRIVATE cuda_ops_dwconv CUDA::cudart)
-add_test(NAME dwconv_test COMMAND dwconv_test)
-add_test(NAME dwconv_prefetch_test COMMAND dwconv_test --prefetch-only)
-
-add_executable(dwconv_fp16_test dwconv_fp16_test.cu)
-target_link_libraries(dwconv_fp16_test PRIVATE cuda_ops_dwconv CUDA::cudart)
-add_test(NAME dwconv_fp16_test COMMAND dwconv_fp16_test)
+if(TARGET cuda_ops_dwconv_cudnn)
+    target_link_libraries(dwconv_test PRIVATE cuda_ops_dwconv_cudnn)
+    target_compile_definitions(dwconv_test PRIVATE DWCONV_HAS_CUDNN=1)
+    add_test(NAME dwconv_cudnn_nhwc_test COMMAND dwconv_test --quick --kernel cudnn --layout nhwc --dtype all --check-cpu --warmup 0 --iterations 1)
+endif()
+# 手动运行默认只测速；CTest 显式保留所有实现的 CPU 正确性校验。
+add_test(NAME dwconv_test COMMAND dwconv_test --quick --kernel all --dtype all --check-cpu --warmup 0 --iterations 1)
