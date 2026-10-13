@@ -14,18 +14,32 @@ from matplotlib import font_manager
 
 
 def configure_font(font_file):
-    """优先使用指定字体文件；WSL 下可直接读取 Windows 的新罗马字体。"""
+    """优先使用指定字体文件；否则尝试新罗马字体和现有衬线字体。"""
     if font_file:
         font_manager.fontManager.addfont(str(font_file))
     else:
         for path in Path('/mnt/c/Windows/Fonts').glob('times*.ttf'):
             font_manager.fontManager.addfont(str(path))
-    try:
-        path = font_manager.findfont('Times New Roman', fallback_to_default=False)
-    except ValueError as error:
-        raise RuntimeError('未找到 Times New Roman，请通过 --font-file 指定字体文件') from error
-    plt.rcParams['font.family'] = 'Times New Roman'
-    logging.info('字体：Times New Roman (%s)', path)
+    for family in ('Times New Roman', 'Liberation Serif'):
+        try:
+            path = font_manager.findfont(family, fallback_to_default=False)
+        except ValueError:
+            continue
+        plt.rcParams['font.family'] = family
+        logging.info('字体：%s (%s)', family, path)
+        return
+    raise RuntimeError('未找到 Times New Roman 或 Liberation Serif，请通过 --font-file 指定字体文件')
+
+
+def device_label(csv_path):
+    """从 comparison.csv 同目录的设备查询记录读取图标题。"""
+    device_file = csv_path.with_name('device.txt')
+    if not device_file.exists():
+        raise RuntimeError(f'缺少设备记录：{device_file}')
+    for line in device_file.read_text().splitlines():
+        if line.strip().startswith('Name '):
+            return line.split('Name', 1)[1].strip().removeprefix('NVIDIA GeForce ').removesuffix(' GPU')
+    raise RuntimeError(f'设备记录缺少 Name：{device_file}')
 
 
 def main():
@@ -86,7 +100,7 @@ def main():
     if any(r['exceeds_physical_vram'] == '1' for r in rows):
         handles.append(Line2D([], [], color='black', marker='x', linestyle='None'))
         labels.append('Input + output > physical VRAM')
-    fig.suptitle(f'Depthwise Conv {args.dtype.upper()} | K={args.k}x{args.k} | NCHW | RTX 5070 Ti Laptop', fontsize=18, y=0.99)
+    fig.suptitle(f'Depthwise Conv {args.dtype.upper()} | K={args.k}x{args.k} | NCHW | {device_label(args.csv)}', fontsize=18, y=0.99)
     fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.96), ncol=len(handles), frameon=False)
     fig.text(0.5, 0.012, 'FLOPs = 2 x N x C x Hout x Wout x K x K (bias excluded); kernel time includes bias. '
              '20 warmup / 100 iterations; single sweep.', ha='center', fontsize=10, color='#555555')

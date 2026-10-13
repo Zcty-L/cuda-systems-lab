@@ -1,0 +1,3 @@
+index, name, uuid, pci.bus_id, driver_version, memory.total [MiB]
+0, NVIDIA GeForce RTX 4090, GPU-f6ffe6fd-aecd-d62b-3522-19e8975458b2, 00000000:17:00.0, 590.48.01, 24564 MiB
+1, NVIDIA GeForce RTX 4090, GPU-df1b4030-506f-4b97-e1fd-f71e2fca429d, 00000000:98:00.0, 590.48.01, 24564 MiB
