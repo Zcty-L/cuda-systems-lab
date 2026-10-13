@@ -40,7 +40,7 @@ cmake -S . -B build -DCMAKE_CUDA_ARCHITECTURES=120
 | --- | --- | --- |
 | [vector_add](ops/vector_add/) | `vector_add_test` | `vector_add_bench` |
 | [softmax](ops/softmax/README.md) | `softmax_test` | `softmax_bench`、`softmax_cluster_bench` |
-| [dwconv](ops/dwconv/README.md) | `dwconv_test` | `dwconv_bench`：[预取测量](docs/operators/dwconv/prefetch-benchmark.md) · [prefetch 与 baseline 对比](docs/operators/dwconv/prefetch-matched.md) · `dwconv_fp16_bench`：[FP16 测量](docs/operators/dwconv/fp16-prefetch.md) · `dwconv_weights_bench`：[权重缓存](docs/operators/dwconv/weights-cache.md) |
+| [dwconv](ops/dwconv/README.md) | `dwconv_test` | `dwconv_bench`、`dwconv_fp16_bench`、`dwconv_opt_bench` |
 
 存储微基准：[运行入口](benchmarks/memory/README.md) · [导入报告](docs/benchmarks/memory/baseline.md)，可执行文件位于 `build/benchmarks/memory/`。
 

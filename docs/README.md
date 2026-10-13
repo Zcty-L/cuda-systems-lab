@@ -49,5 +49,5 @@ docs/
 
 ### 算子优化
 
-- DWConv：[输入预取范围测量](operators/dwconv/prefetch-benchmark.md)、[prefetch 与 baseline 对比](operators/dwconv/prefetch-matched.md)、[FP16 prefetch 测量](operators/dwconv/fp16-prefetch.md)、[权重 shared 与全局缓存](operators/dwconv/weights-cache.md)
+- DWConv：[输入预取范围测量](operators/dwconv/prefetch-benchmark.md)、[FP32 prefetch 与 baseline 对比](operators/dwconv/prefetch-matched.md)、[FP16 prefetch 测量](operators/dwconv/fp16-prefetch.md)、[权重 shared 与全局缓存](operators/dwconv/weights-cache.md)、[FP32 opt 与 baseline 对比](operators/dwconv/opt-fp32.md)、[cuDNN 融合与布局对比](operators/dwconv/cudnn-fusion.md)
 - Softmax：[导入基线](operators/softmax/baseline.md)、[block 与 online 实现](operators/softmax/block-online.md)、[AI 计算说明](operators/softmax/arithmetic-intensity.md)、[Roofline 分析](operators/softmax/roofline.md)、[行数与并行度](operators/softmax/row-scaling.md)、[Cluster 对照](operators/softmax/cluster.md)

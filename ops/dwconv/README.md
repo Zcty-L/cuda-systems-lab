@@ -63,6 +63,7 @@ cuDNN 的 FP32/FP16 计算封装在 [dwconv_cudnn.cu](dwconv_cudnn.cu) / [dwconv
 
 CMake 默认 `DWCONV_TEST_CUDNN=ON`；缺少开发库时其余实现仍可构建，显式选择 cuDNN 路径会报错，`all` 跳过它们。可用 `-DDWCONV_TEST_CUDNN=OFF` 关闭。
 
+融合与布局的正确性、重复测量和 profiler 结果见 [cuDNN 融合与布局对比](../../docs/operators/dwconv/cudnn-fusion.md)，复测入口为 [dwconv_cudnn_bench.py](../../benchmarks/operators/dwconv_cudnn_bench.py)。
 
 分阶段计时：
 
@@ -125,7 +126,7 @@ cmake --build build --target dwconv_test --parallel
 | FP32 | 3×3、5×5 使用尺寸特化；7×7 在 grouped blocks 小于 104 时使用单通道 kernel，否则使用四通道特化；11×11 在动态共享内存不超过 48 KiB 时使用 16×16 共享输入 tile；其余走通用 kernel |
 | FP16 | 3×3、5×5、7×7 使用单通道对 kernel；9×9 在 pair blocks 至少为 140 且共享内存不超过 48 KiB 时使用共享输入 tile，否则使用单通道对；11×11 在共享内存允许时使用共享输入 tile，否则使用四通道对特化；其余走通用 kernel |
 
-上述阈值来自原文件。
+上述阈值来自原文件。FP32 测量见 [opt 与 baseline 对比](../../docs/operators/dwconv/opt-fp32.md)
 
 此前统一 `dwconv_test` 使用原 17 组 FP32、19 组 FP16 配置，合并去重后运行全部兼容的 baseline 和 opt。新增用例覆盖 3/5/7/9/11 尺寸分派、FP32 grouped blocks=100/104、FP16 pair blocks=136/140、共享输入 tile 的边界与 stride=1/2，以及 stride=3 时超出 48 KiB 的回退。当时的 FP16 累加版本与逐步 half 舍入 CPU 参考结果数值完全一致；当前 opt 已统一为 FP32 FMA 累加、写回时舍入到 FP16。
 
@@ -172,3 +173,5 @@ cmake --build build --target dwconv_test --parallel
 `dwconv.cu` 中的权重缓存实验提供 `conv2d_4x128x256_groups_kernel_gmem` 和 `conv2d_4x128x256_groups_kernel_gmem_l2` 两个入口。两者基于当前 k128 baseline，仅将 shared 权重读取改为直接 `__ldg`，共用计算实现；后者由启动方额外设置仅覆盖 weights 的 L2 优先保留窗口，input 使用默认策略。
 
 `dwconv_weights_bench` 默认比较 baseline、gmem、gmem_l2，两个版本均报告相对 baseline 的耗时变化。`--k3` 单测 N=16/C=64/H=W=128/K=3；`--profile`、`--profile-k3` 分别执行 K=7、K=3 的三版单次启动，供 NCU 采集。`dwconv_test` 覆盖两个计算入口，基准程序另外校验启用缓存策略后的结果。详见[权重缓存报告](../../docs/operators/dwconv/weights-cache.md)。
+
+FP32 opt 的 bias 直接读取与 warp shuffle 广播对照入口为 `dwconv_bias_bench`。
