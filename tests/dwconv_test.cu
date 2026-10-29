@@ -32,7 +32,7 @@ void check(cudaError_t error)
 
 bool is_cudnn(const std::string &kernel)
 {
-    return kernel == "cudnn" || kernel == "cudnn-fused" || kernel == "cudnn-separate";
+    return kernel == "cudnn-autotune" || kernel == "cudnn" || kernel == "cudnn-fused" || kernel == "cudnn-separate";
 }
 
 struct Options
@@ -321,9 +321,11 @@ template <class T> void run_forward(const ShapeCase &s, const std::string &kerne
                                                kernel == "cudnn-fused"      ? CudnnForwardMode::Fused
                                                : kernel == "cudnn-separate" ? CudnnForwardMode::Separate
                                                                             : CudnnForwardMode::Graph,
-                                               options.layout == "nhwc" ? CudnnLayout::NHWC : CudnnLayout::NCHW);
+                                               options.layout == "nhwc" ? CudnnLayout::NHWC : CudnnLayout::NCHW,
+                                               kernel == "cudnn-autotune");
         const auto info = cudnn->info();
-        std::cout << "[cuDNN] version=" << info.version << " algo=" << info.algorithm << " engine=" << info.engine
+        std::cout << (kernel == "cudnn-autotune" ? "[cuDNN 初始方案 / 搜索分配] version=" : "[cuDNN] version=")
+                  << info.version << " algo=" << info.algorithm << " engine=" << info.engine
                   << " workspace=" << info.workspace_bytes << " bytes，layout=" << options.layout
                   << "，FP32 累加，FP32 禁用 TF32，计时包含 convolution"
                   << (kernel == "cudnn-separate" ? (s.bias ? " + add bias" : "") : " fused bias") << "\n";
@@ -355,6 +357,8 @@ template <class T> void run_forward(const ShapeCase &s, const std::string &kerne
     if(cudnn)
     {
         cudnn->bind(x.ptr, w.ptr, s.bias ? b.ptr : nullptr, y.ptr);
+        if(kernel == "cudnn-autotune")
+            cudnn->autotune();
         // 首次执行验证支持情况并完成库的懒初始化，不计入 kernel 时间。
         cudnn->launch(x.ptr, w.ptr, s.bias ? b.ptr : nullptr, y.ptr);
     }
@@ -600,13 +604,14 @@ template <class T> void run_backward(const ShapeCase &shape)
               << " ms（GPU 释放；梯度 D2H 比较计入校验阶段）\n";
 }
 
-const std::array<std::string, 13> kKernels = {
-    "baseline",         "baseline-k128", "baseline-k64",  "baseline-k32", "prefetch",    "opt",           "pytorch",
-    "pytorch-backward", "gmem",          "gmem-l2-entry", "cudnn",        "cudnn-fused", "cudnn-separate"};
+const std::array<std::string, 14> kKernels = {"baseline",       "baseline-k128", "baseline-k64", "baseline-k32",
+                                              "prefetch",       "opt",           "pytorch",      "pytorch-backward",
+                                              "gmem",           "gmem-l2-entry", "cudnn",        "cudnn-fused",
+                                              "cudnn-separate", "cudnn-autotune"};
 void usage()
 {
     std::cout << "用法：dwconv_test [--kernel baseline|baseline-k128|baseline-k64|baseline-k32|prefetch|opt|pytorch|"
-                 "pytorch-backward|gmem|gmem-l2-entry|cudnn|cudnn-fused|cudnn-separate|all]\n"
+                 "pytorch-backward|gmem|gmem-l2-entry|cudnn|cudnn-autotune|cudnn-fused|cudnn-separate|all]\n"
                  "  [--dtype fp32|fp16|all] [--layout nchw|nhwc] [--case ID|all] [--check-cpu] [--warmup N] "
                  "[--iterations N]\n"
                  "  [--quick] [--list-cases] [--help]\n"

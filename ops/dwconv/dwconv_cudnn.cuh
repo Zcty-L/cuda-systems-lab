@@ -41,7 +41,8 @@ class CudnnForward
 {
   public:
     CudnnForward(const Conv2DParam &p, int n, bool fp16, cudaStream_t stream = nullptr,
-                 CudnnForwardMode mode = CudnnForwardMode::Graph, CudnnLayout layout = CudnnLayout::NCHW);
+                 CudnnForwardMode mode = CudnnForwardMode::Graph, CudnnLayout layout = CudnnLayout::NCHW,
+                 bool autotune = false);
 
     ~CudnnForward();
 
@@ -53,6 +54,10 @@ class CudnnForward
 
     // Graph 首次绑定或指针改变时创建 variant pack；调用方放在计时外。
     void bind(const void *input, const void *weights, const void *bias, void *output);
+
+    // bind 后在准备阶段调用；A/B/FALLBACK 候选，256 MiB workspace 上限。
+    // 每个候选预热 20 次、计时 100 次，取三轮中位数；结果由本实例复用。
+    void autotune();
 
     CudnnForwardInfo info() const;
 

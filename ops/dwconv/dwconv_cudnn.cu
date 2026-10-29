@@ -5,6 +5,10 @@
 #include <string>
 #include <array>
 #include <vector>
+#include <iostream>
+#include <algorithm>
+#include <limits>
+#include <cmath>
 
 namespace
 {
@@ -42,6 +46,12 @@ void attr(cudnnBackendDescriptor_t d, cudnnBackendAttributeName_t name, cudnnBac
 
 struct GraphPlan
 {
+    struct Candidate
+    {
+        cudnnBackendDescriptor_t plan;
+        int64_t engine, workspace;
+    };
+    std::vector<Candidate> candidates;
     bool nhwc = false;
     std::vector<std::unique_ptr<BackendDesc>> descriptors;
     std::unique_ptr<BackendDesc> pack;
@@ -73,7 +83,7 @@ struct GraphPlan
         return d;
     }
 
-    void prepare(cudnnHandle_t handle, const Conv2DParam &p, int n, bool half, CudnnLayout layout)
+    void prepare(cudnnHandle_t handle, const Conv2DParam &p, int n, bool half, CudnnLayout layout, bool autotune)
     {
         nhwc = layout == CudnnLayout::NHWC;
         const auto dtype = half ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
@@ -128,13 +138,21 @@ struct GraphPlan
         attr(graph, CUDNN_ATTR_OPERATIONGRAPH_OPS, CUDNN_TYPE_BACKEND_DESCRIPTOR, 2, ops);
         check_cudnn(cudnnBackendFinalize(graph));
 
-        // 保持调用方布局，不拆图回退；A 无可用方案时尝试 FALLBACK 融合 engine。
-        for(auto heuristic : {CUDNN_HEUR_MODE_A, CUDNN_HEUR_MODE_FALLBACK})
+        // 保持布局与精度，不拆图。默认 A / FALLBACK 首个方案；autotune 收集 A/B/FALLBACK。
+        for(auto heuristic : {CUDNN_HEUR_MODE_A, CUDNN_HEUR_MODE_B, CUDNN_HEUR_MODE_FALLBACK})
         {
+            if(!autotune && heuristic == CUDNN_HEUR_MODE_B)
+                continue;
             auto heur = make(CUDNN_BACKEND_ENGINEHEUR_DESCRIPTOR);
             attr(heur, CUDNN_ATTR_ENGINEHEUR_OPERATION_GRAPH, CUDNN_TYPE_BACKEND_DESCRIPTOR, 1, &graph);
             attr(heur, CUDNN_ATTR_ENGINEHEUR_MODE, CUDNN_TYPE_HEUR_MODE, 1, &heuristic);
             auto status = cudnnBackendFinalize(heur);
+            if(status != CUDNN_STATUS_SUCCESS && autotune)
+            {
+                std::cout << "[autotune] heuristic=" << int(heuristic) << " skip=" << cudnnGetErrorString(status)
+                          << "\n";
+                continue;
+            }
             if(status == CUDNN_STATUS_NOT_SUPPORTED)
                 continue;
             check_cudnn(status);
@@ -148,6 +166,8 @@ struct GraphPlan
                 continue;
             check_cudnn(cudnnBackendGetAttribute(heur, CUDNN_ATTR_ENGINEHEUR_RESULTS, CUDNN_TYPE_BACKEND_DESCRIPTOR,
                                                  count, &count, configs.data()));
+            // 实际返回数可能小于查询容量，不访问未填充的描述符。
+            configs.resize(count);
             for(auto config : configs)
             {
                 auto engine = make(CUDNN_BACKEND_ENGINE_DESCRIPTOR);
@@ -169,17 +189,35 @@ struct GraphPlan
                 attr(candidate, CUDNN_ATTR_EXECUTION_PLAN_HANDLE, CUDNN_TYPE_HANDLE, 1, &handle);
                 attr(candidate, CUDNN_ATTR_EXECUTION_PLAN_ENGINE_CONFIG, CUDNN_TYPE_BACKEND_DESCRIPTOR, 1, &config);
                 status = cudnnBackendFinalize(candidate);
+                if(status != CUDNN_STATUS_SUCCESS && autotune)
+                {
+                    std::cout << "[autotune] plan build skip=" << cudnnGetErrorString(status) << "\n";
+                    continue;
+                }
                 if(status == CUDNN_STATUS_NOT_SUPPORTED || status == CUDNN_STATUS_ARCH_MISMATCH)
                     continue;
                 check_cudnn(status);
-                plan = candidate;
-                check_cudnn(cudnnBackendGetAttribute(plan, CUDNN_ATTR_EXECUTION_PLAN_WORKSPACE_SIZE, CUDNN_TYPE_INT64,
-                                                     1, &found, &workspace_bytes));
-                check_cudnn(cudnnBackendGetAttribute(engine, CUDNN_ATTR_ENGINE_GLOBAL_INDEX, CUDNN_TYPE_INT64, 1,
-                                                     &found, &engine_id));
-                return;
+                int64_t bytes = 0, id = -1;
+                check_cudnn(cudnnBackendGetAttribute(candidate, CUDNN_ATTR_EXECUTION_PLAN_WORKSPACE_SIZE,
+                                                     CUDNN_TYPE_INT64, 1, &found, &bytes));
+                check_cudnn(
+                    cudnnBackendGetAttribute(engine, CUDNN_ATTR_ENGINE_GLOBAL_INDEX, CUDNN_TYPE_INT64, 1, &found, &id));
+                // Autotune 搜索预算为 256 MiB；同一 engine 的不同配置均保留。
+                if(autotune && bytes > 256LL * 1024 * 1024)
+                    continue;
+                candidates.push_back({candidate, id, bytes});
+                if(!plan)
+                {
+                    plan = candidate;
+                    engine_id = id;
+                }
+                workspace_bytes = std::max(workspace_bytes, bytes);
+                if(!autotune)
+                    return;
             }
         }
+        if(plan)
+            return;
         throw CudnnUnsupported("Graph Conv+bias：当前布局 / groups=C / 指定精度无可用融合 plan");
     }
 
@@ -205,6 +243,7 @@ struct CudnnForward::Impl
 {
     CudnnForwardMode mode = CudnnForwardMode::Graph;
     CudnnLayout layout = CudnnLayout::NCHW;
+    bool autotune = false;
     std::unique_ptr<GraphPlan> graph;
     cudnnActivationDescriptor_t activation = nullptr;
     cudnnHandle_t handle = nullptr;
@@ -246,7 +285,7 @@ struct CudnnForward::Impl
         if(mode == CudnnForwardMode::Graph)
         {
             graph = std::make_unique<GraphPlan>();
-            graph->prepare(handle, p, n, half, layout);
+            graph->prepare(handle, p, n, half, layout, autotune);
             workspace_bytes = graph->workspace_bytes;
             if(workspace_bytes)
                 cuda_lab::check_cuda(cudaMalloc(&workspace, workspace_bytes), "cuDNN workspace");
@@ -326,9 +365,12 @@ struct CudnnForward::Impl
 };
 
 CudnnForward::CudnnForward(const Conv2DParam &p, int n, bool fp16, cudaStream_t stream, CudnnForwardMode mode,
-                           CudnnLayout layout)
+                           CudnnLayout layout, bool autotune)
     : impl_(std::make_unique<Impl>())
 {
+    if(autotune && mode != CudnnForwardMode::Graph)
+        throw std::invalid_argument("autotune 仅支持 Graph");
+    impl_->autotune = autotune;
     impl_->mode = mode;
     impl_->layout = layout;
     impl_->prepare(p, n, fp16, stream);
@@ -352,4 +394,65 @@ void CudnnForward::bind(const void *input, const void *weights, const void *bias
         throw std::invalid_argument("cuDNN 融合模式要求 bias 指针");
     if(impl_->graph)
         impl_->graph->bind(input, weights, bias, output, impl_->workspace);
+}
+
+void CudnnForward::autotune()
+{
+    auto &g = impl_->graph;
+    if(!impl_->autotune || !g || !g->pack)
+        throw std::invalid_argument("autotune 要求构造时启用并先 bind");
+    cudaStream_t stream;
+    check_cudnn(cudnnGetStream(impl_->handle, &stream));
+    struct Events
+    {
+        cudaEvent_t start = nullptr, stop = nullptr;
+        ~Events()
+        {
+            if(start)
+                cudaEventDestroy(start);
+            if(stop)
+                cudaEventDestroy(stop);
+        }
+    } events;
+    cuda_lab::check_cuda(cudaEventCreate(&events.start), "autotune event");
+    cuda_lab::check_cuda(cudaEventCreate(&events.stop), "autotune event");
+    float best = std::numeric_limits<float>::infinity();
+    for(size_t i = 0; i < g->candidates.size(); ++i)
+    {
+        const auto &c = g->candidates[i];
+        auto launch = [&] { check_cudnn(cudnnBackendExecute(impl_->handle, c.plan, g->pack->desc)); };
+        try
+        {
+            std::array<float, 3> times;
+            for(auto &time : times)
+            {
+                for(int j = 0; j < 20; ++j)
+                    launch();
+                cuda_lab::check_cuda(cudaEventRecord(events.start, stream), "autotune start");
+                for(int j = 0; j < 100; ++j)
+                    launch();
+                cuda_lab::check_cuda(cudaEventRecord(events.stop, stream), "autotune stop");
+                cuda_lab::check_cuda(cudaEventSynchronize(events.stop), "autotune sync");
+                cuda_lab::check_cuda(cudaEventElapsedTime(&time, events.start, events.stop), "autotune time");
+                time *= 10; // ms / 100 -> us
+            }
+            std::sort(times.begin(), times.end());
+            std::cout << "[autotune] candidate=" << i << " engine=" << c.engine << " workspace=" << c.workspace
+                      << " us=" << times[1] << "\n";
+            if(times[1] < best)
+            {
+                best = times[1];
+                g->plan = c.plan;
+                g->engine_id = c.engine;
+            }
+        }
+        catch(const CudnnUnsupported &e)
+        {
+            std::cout << "[autotune] candidate=" << i << " skip=" << e.what() << "\n";
+        }
+    }
+    if(!std::isfinite(best))
+        throw CudnnUnsupported("autotune 无可执行方案");
+    std::cout << "[autotune] selected_engine=" << g->engine_id << " candidates=" << g->candidates.size()
+              << " median_us=" << best << "\n";
 }
