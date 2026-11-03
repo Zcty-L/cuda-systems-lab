@@ -10,9 +10,16 @@
 
 namespace
 {
+
 void run_case(std::size_t count)
 {
     std::cout << "\n[配置] count=" << count << "\n";
+
+    if(count == 0)
+    {
+        std::cout << "[结果] 空输入无需启动 kernel\n";
+        return;
+    }
 
     std::vector<float> a(count);
     std::vector<float> b(count);
@@ -54,6 +61,7 @@ void run_case(std::size_t count)
     cuda_lab::check_cuda(cudaFree(device_b), "cudaFree(b)");
     cuda_lab::check_cuda(cudaFree(device_out), "cudaFree(out)");
 }
+
 } // namespace
 
 int main()
@@ -64,6 +72,7 @@ int main()
         cuda_lab::check_cuda(cudaGetDeviceProperties(&properties, 0), "cudaGetDeviceProperties");
         std::cout << "[设备] " << properties.name << " SM " << properties.major << "." << properties.minor << "\n";
 
+        run_case(0);
         run_case(1);
         run_case(1003);
         run_case(4096);

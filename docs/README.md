@@ -41,7 +41,13 @@ docs/
 ### 使用指南
 
 - 公共工具：[设备查询](guides/device-query/usage.md)
+- 构建与安装：[CMake、Python 接口、测试与打包](guides/build/usage.md)
+- 算子开发：[以 Vector Add 为例](guides/operators/development.md)
 
 ### 基准测试
 
 - 公共方法：[Roofline 指标与判断](benchmarks/methodology/roofline.md)
+
+### 算子
+
+- Vector Add：[框架与接口验证](operators/vector_add/validation.md)

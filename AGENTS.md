@@ -7,6 +7,8 @@
 - 所有正式报告与指南保存在 `docs/`；根 README、本文件和模块 README 用于导航与局部说明。
 - 正式文档按 `docs/<大类>/<主题>/<文档>.md` 分层归档，分类与命名遵循 [docs/README.md](docs/README.md)；新增或移动文档时同步更新索引及引用链接。
 - 公共头文件放 `include/cuda_lab/`。
+- PyTorch 的 Tensor 检查、分配、stream 适配与算子注册放 `bindings/torch/`；公开 Python API 和 FakeTensor/autograd 注册放 `python/cuda_lab/`。
+- 原生正确性测试放 `tests/native/`，Python 接口测试放 `tests/python/`；算子基准按 `benchmarks/operators/{name}/` 组织，公共计时与环境记录放 `benchmarks/common/`。
 
 ## PTX 与架构实验
 
@@ -22,6 +24,9 @@
 - C++/CUDA 目标统一经 CMake 构建；仅临时验证允许直接运行 `nvcc`，最终目标仍须注册到 CMake。
 - Python 脚本可独立执行。需要 Python 解释器时默认使用 `conda activate py311`；缺少依赖包时先询问是否安装。
 - 可选依赖按目标启用，避免一个实验的依赖阻止整个仓库配置。
+- `ops/` 保持不依赖 PyTorch；算子通过 `ops/CMakeLists.txt` 显式注册，简单目标使用 `cuda_lab_add_operator`。Python 扩展链接相同目标，不另建一套 CUDA 源文件列表。
+- 原生构建默认不启用 Python；Python 包通过 `pyproject.toml` 复用 CMake 构建。构建、安装与运行使用同一 Python/PyTorch 环境，测试从安装包导入，禁止在测试中临时拼接 `sys.path`。
+- 构建和新增算子流程见 [构建指南](docs/guides/build/usage.md)及[算子开发指南](docs/guides/operators/development.md)。
 
 ## 验证与测量
 
@@ -30,6 +35,8 @@
 - 基准配置遵循 [benchmarks/README.md](benchmarks/README.md)，公共方法与算子报告的划分遵循 [文档规则](docs/README.md)。
 - 测试输出包含配置、主要阶段、关键结果、`[SUCCESS]` 标记；不同测试与主要阶段之间留空行。
 - 优化前记录正确性和性能基线；同一设备、输入和计时方法下比较结果。算子基线与优化报告统一保存在 `docs/operators/{name}/`。
+- Python 接入至少验证元数据约束、数值、非默认 stream 和算子注册；声明支持 autograd、CUDA Graph 或编译执行时增加相应验证。可变输出的 schema 必须声明 mutation/alias，FakeTensor 与真实接口保持一致。
+- 多后端对比共用输入与计时口径；先验证正确性，再测量。结果记录 `pass/skip/error`、跳过或失败原因、运行环境、构建信息与工作区是否有未提交改动；失败不得生成成功耗时。
 
 ## 分支与提交
 

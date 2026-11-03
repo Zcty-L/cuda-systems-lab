@@ -44,7 +44,7 @@ int main()
         cuda_lab::check_cuda(cudaEventCreate(&start), "cudaEventCreate(start)");
         cuda_lab::check_cuda(cudaEventCreate(&stop), "cudaEventCreate(stop)");
 
-        std::cout << "\n[阶段] 计时 kernel，不含内存分配和传输\n";
+        std::cout << "\n[阶段] CUDA Event 计时，不含内存分配和传输\n";
         cuda_lab::check_cuda(cudaEventRecord(start), "cudaEventRecord(start)");
         for(int index = 0; index < iterations; ++index)
         {
