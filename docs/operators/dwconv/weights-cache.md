@@ -74,8 +74,8 @@ cmake --build build --target dwconv_weights_bench dwconv_test device_query -j 8
 ./build/tools/device_query
 ctest --test-dir build -R '^dwconv_test$' --output-on-failure
 mkdir -p build/dwconv-weights-baseline
-./build/benchmarks/operators/dwconv_weights_bench > build/dwconv-weights-baseline/run1.log
-./build/benchmarks/operators/dwconv_weights_bench > build/dwconv-weights-baseline/run2.log
+./build/benchmarks/operators/dwconv/dwconv_weights_bench > build/dwconv-weights-baseline/run1.log
+./build/benchmarks/operators/dwconv/dwconv_weights_bench > build/dwconv-weights-baseline/run2.log
 ```
 
 `--k3` 单独计时 N=16/C=64/H=W=128/K=3；`--profile` 与 `--profile-k3` 分别只运行 K=7、K=3 的三版正确性启动，供 NCU 使用。旧的 `--persist*` 分支已合并到默认三版对照。

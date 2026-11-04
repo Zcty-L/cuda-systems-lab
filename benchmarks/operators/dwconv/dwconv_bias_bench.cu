@@ -1,4 +1,5 @@
-#include <dwconv.cuh>
+// 在独立测试目标中实例化同一实现，避免增加算子公开接口。
+#include "../../../ops/dwconv/dwconv_opt_fp32.cu"
 #include <cuda_lab/cuda_check.cuh>
 #include <algorithm>
 #include <array>
@@ -10,13 +11,14 @@
 using cuda_lab::check_cuda;
 using Kernel = void (*)(float *, float *, float *, float *, Conv2DParam);
 constexpr int iterations = 100;
-constexpr int rounds = 9;
+constexpr int rounds = 10;
 constexpr int variants = 2;
-Kernel kernels[] = {conv2d_4x128x256_groups_kernel, conv2d_4x128x256_groups_kernel_prefetch};
-const char *names[] = {"baseline", "prefetch"};
+const char *names[] = {"direct", "shuffle"};
+
 struct Buffer
 {
     float *ptr = nullptr;
+
     explicit Buffer(size_t count)
     {
         check_cuda(cudaMalloc(&ptr, count * sizeof(float)), "分配");
@@ -25,14 +27,17 @@ struct Buffer
             data[i] = (int(i % 29) - 14) / 32.0f;
         check_cuda(cudaMemcpy(ptr, data.data(), count * sizeof(float), cudaMemcpyHostToDevice), "上传");
     }
+
     ~Buffer()
     {
         cudaFree(ptr);
     }
+
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
 };
-void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device, bool profile = false)
+
+void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device)
 {
     Conv2DParam p{};
     p.in_h = p.in_w = h;
@@ -51,6 +56,27 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device, b
     dim3 grid((p.outHW + 255) / 256, c / 4, n);
     cudaStream_t stream;
     check_cuda(cudaStreamCreate(&stream), "创建流");
+    Kernel kernels[2];
+    if(k == 3)
+    {
+        kernels[0] = conv2d_4x128x256_groups_kernel<3, false>;
+        kernels[1] = conv2d_4x128x256_groups_kernel<3, true>;
+    }
+    else if(k == 5)
+    {
+        kernels[0] = conv2d_4x128x256_groups_kernel<5, false>;
+        kernels[1] = conv2d_4x128x256_groups_kernel<5, true>;
+    }
+    else if(k == 7)
+    {
+        kernels[0] = conv2d_4x128x256_groups_kernel<7, false>;
+        kernels[1] = conv2d_4x128x256_groups_kernel<7, true>;
+    }
+    else
+    {
+        kernels[0] = conv2d_4x128x256_groups_kernel<0, false>;
+        kernels[1] = conv2d_4x128x256_groups_kernel<0, true>;
+    }
     auto launch = [&](int v)
     {
         void *args[] = {&input.ptr, &weights.ptr, &bias.ptr, &output.ptr, &p};
@@ -66,7 +92,7 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device, b
         if(v == 0)
             reference = actual;
         for(size_t i = 0; i < count; ++i)
-            if(!std::isfinite(actual[i]) || std::abs(actual[i] - reference[i]) > 1e-5f * (1 + std::abs(reference[i])))
+            if(!std::isfinite(actual[i]) || actual[i] != reference[i])
                 throw std::runtime_error("版本间结果不一致");
     }
     std::cout << "\n[配置] N=" << n << " C=" << c << " H=W=" << h << " K=" << k << " S=" << stride << " grid=" << grid.x
@@ -77,28 +103,32 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device, b
     cudaGraphExec_t execs[variants];
     for(int v = 0; v < variants; ++v)
     {
-        int active;
-        cudaFuncAttributes attr{};
-        check_cuda(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&active, kernels[v], 256, 0), "驻留量");
-        check_cuda(cudaFuncGetAttributes(&attr, kernels[v]), "资源");
-        std::cout << "[资源] " << names[v] << " registers=" << attr.numRegs << " local=" << attr.localSizeBytes
-                  << " shared=" << attr.sharedSizeBytes << " dynamic_shared=" << 0 << " blocks/SM=" << active
-                  << " waves=" << double(grid.x * grid.y * grid.z) / (device.multiProcessorCount * active) << "\n";
-        if(profile)
-            continue;
         check_cuda(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal), "捕获");
         for(int i = 0; i < iterations; ++i)
             launch(v);
         check_cuda(cudaStreamEndCapture(stream, &graphs[v]), "结束捕获");
+        size_t node_count = 0;
+        check_cuda(cudaGraphGetNodes(graphs[v], nullptr, &node_count), "图节点数量");
+        std::vector<cudaGraphNode_t> nodes(node_count);
+        check_cuda(cudaGraphGetNodes(graphs[v], nodes.data(), &node_count), "图节点");
+        cudaKernelNodeParams node{};
+        check_cuda(cudaGraphKernelNodeGetParams(nodes.front(), &node), "kernel 参数");
+        int active;
+        cudaFuncAttributes attr{};
+        int threads = node.blockDim.x * node.blockDim.y * node.blockDim.z;
+        check_cuda(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&active, node.func, threads, node.sharedMemBytes),
+                   "驻留量");
+        check_cuda(cudaFuncGetAttributes(&attr, node.func), "资源");
+        std::cout << "[资源] " << names[v] << " registers=" << attr.numRegs << " local=" << attr.localSizeBytes
+                  << " shared=" << attr.sharedSizeBytes << " dynamic_shared=" << node.sharedMemBytes
+                  << " grid=" << node.gridDim.x << ',' << node.gridDim.y << ',' << node.gridDim.z
+                  << " threads=" << threads << " blocks/SM=" << active << " waves="
+                  << double(node.gridDim.x * node.gridDim.y * node.gridDim.z) / (device.multiProcessorCount * active)
+                  << '\n';
         check_cuda(cudaGraphInstantiate(&execs[v], graphs[v], 0), "实例化");
         for(int i = 0; i < 20; ++i)
             launch(v);
         check_cuda(cudaGraphLaunch(execs[v], stream), "图预热");
-    }
-    if(profile)
-    {
-        cudaStreamDestroy(stream);
-        return;
     }
     check_cuda(cudaStreamSynchronize(stream), "预热同步");
     cudaEvent_t start, stop;
@@ -138,50 +168,23 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device, b
     cudaEventDestroy(stop);
     cudaStreamDestroy(stream);
 }
-int main(int argc, char **argv)
+
+int main()
 {
     try
     {
-        const std::string mode = argc == 2 ? argv[1] : "";
-        const bool large_batch = mode == "--large-batch";
-        const bool profile = mode == "--profile";
-        if(argc > 2 || (argc == 2 && !large_batch && !profile))
-            throw std::runtime_error("用法：dwconv_bench [--large-batch|--profile]");
         cudaDeviceProp device{};
         check_cuda(cudaGetDeviceProperties(&device, 0), "设备");
         std::cout
             << "[设备] " << device.name << " SM=" << device.major << '.' << device.minor
             << " SM数量=" << device.multiProcessorCount << " CUDA=" << CUDART_VERSION
-            << "\n[方法] 热缓存，20次直接预热+1次100节点图预热；9轮轮换顺序，每轮100次；CUDA event计时图内核序列\n";
-        int resident;
-        check_cuda(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&resident, kernels[0], 256, 0), "驻留量");
-        if(profile)
+            << "\n[方法] 热缓存，20次直接预热+1次100节点图预热；10轮轮换顺序，每轮100次；CUDA event计时图内核序列\n";
+        for(int k : {3, 5, 7, 9})
         {
-            std::cout << "[诊断] 两个版本，仅执行正确性单次启动\n";
-            for(int k : {3, 7, 11})
-                run(16, 64, 128, k, 1, device, true);
+            run(1, 32, 28, k, 1, device);
+            run(16, 64, 128, k, 1, device);
         }
-        else if(large_batch)
-        {
-            for(int n : {8, 16, 32})
-                for(int k : {3, 7, 11})
-                    run(n, 64, 128, k, 1, device);
-            for(int stride : {1, 2})
-                for(int k : {3, 7})
-                    run(16, 128, 128, k, stride, device);
-        }
-        else
-            for(int k : {3, 5, 7, 11})
-            {
-                run(1, 32, 28, k, 1, device);
-                for(int wave : {5, 10, 20})
-                {
-                    const int c = ((device.multiProcessorCount * resident * wave + 15) / 16) * 4;
-                    run(1, c, 64, k, 1, device);
-                }
-                run(4, 128, 128, k, 2, device);
-            }
-        std::cout << "\n[SUCCESS] dwconv_bench\n";
+        std::cout << "\n[SUCCESS] dwconv_bias_bench\n";
     }
     catch(const std::exception &e)
     {

@@ -10,10 +10,10 @@
 - 每项预热 20 次，随后使用 CUDA event 测量 200 次 kernel 调用的总时间并除以次数。计时不含分配、主机设备拷贝及预热。计算强度 AI 按普通浮点运算量除以访存字节数估算，详细口径见 [AI 计算说明](arithmetic-intensity.md)。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=softmax
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/benchmarks/operators/softmax_bench
+./build/benchmarks/operators/softmax/softmax_bench
 ```
 
 ## 正确性与测量结果

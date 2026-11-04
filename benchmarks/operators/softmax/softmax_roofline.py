@@ -133,7 +133,7 @@ def summarize(units, record, cols, rows=512):
 
 
 def main():
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bench", type=Path, help="默认使用基础基准；指定 --variants 时使用 cluster 对照基准")
     parser.add_argument("--variants", nargs="+", choices=["online", "block512", "block1024", "cluster2", "cluster4"],
@@ -146,7 +146,7 @@ def main():
     args = parser.parse_args()
     if args.bench is None:
         name = "softmax_cluster_bench" if args.variants else "softmax_bench"
-        args.bench = root / "build/benchmarks/operators" / name
+        args.bench = root / "build/benchmarks/operators/softmax" / name
     if args.variants and len(set(args.variants)) != len(args.variants):
         parser.error("实现不能重复")
     if args.variants and any(cols > 32768 or (cols > 16384 and any(v in {"block512", "cluster2"} for v in args.variants)) for cols in args.cols):

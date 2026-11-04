@@ -15,9 +15,11 @@ constexpr int rounds = 10;
 constexpr int variants = 2;
 Kernel baseline = conv2d_4x128x256_groups_kernel;
 const char *names[] = {"baseline", "opt"};
+
 struct Buffer
 {
     float *ptr = nullptr;
+
     explicit Buffer(size_t count)
     {
         check_cuda(cudaMalloc(&ptr, count * sizeof(float)), "分配");
@@ -26,13 +28,16 @@ struct Buffer
             data[i] = (int(i % 29) - 14) / 32.0f;
         check_cuda(cudaMemcpy(ptr, data.data(), count * sizeof(float), cudaMemcpyHostToDevice), "上传");
     }
+
     ~Buffer()
     {
         cudaFree(ptr);
     }
+
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
 };
+
 void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device)
 {
     Conv2DParam p{};
@@ -149,6 +154,7 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device)
     cudaEventDestroy(stop);
     cudaStreamDestroy(stream);
 }
+
 int main()
 {
     try

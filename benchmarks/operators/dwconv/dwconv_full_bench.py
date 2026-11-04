@@ -68,7 +68,7 @@ def main():
     if args.warmup < 0 or args.iterations < 1:
         parser.error("warmup 不得为负，iterations 必须为正")
     args.output.mkdir(parents=True, exist_ok=True)
-    binary = args.build / "tests/dwconv_test"
+    binary = args.build / "tests/native/dwconv_test"
     config = dict(binary=str(binary.resolve()), warmup=args.warmup, iterations=args.iterations,
                   dtype=args.dtype, layout="nchw", kernels=["cudnn", "baseline", "pytorch"])
     # 防止续跑时混入另一份二进制或配置。

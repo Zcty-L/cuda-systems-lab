@@ -40,7 +40,7 @@ def main():
             for case in args.cases:
                 for dtype in ["fp32", "fp16"]:
                     for kernel, layout in order:
-                        command = [str(args.build / "tests/dwconv_test"), "--quick", "--case", str(case),
+                        command = [str(args.build / "tests/native/dwconv_test"), "--quick", "--case", str(case),
                                    "--kernel", kernel, "--layout", layout, "--dtype", dtype,
                                    "--warmup", str(args.warmup), "--iterations", str(args.iterations)]
                         result = subprocess.run(command, capture_output=True, text=True, timeout=600)

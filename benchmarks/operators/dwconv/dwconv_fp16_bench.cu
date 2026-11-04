@@ -17,16 +17,20 @@ const char *names[] = {"baseline", "prefetch"};
 template <typename T> struct Buffer
 {
     T *ptr = nullptr;
+
     explicit Buffer(size_t count)
     {
         check_cuda(cudaMalloc(&ptr, count * sizeof(T)), "分配");
     }
+
     ~Buffer()
     {
         cudaFree(ptr);
     }
+
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
+
     void upload(const std::vector<T> &data)
     {
         check_cuda(cudaMemcpy(ptr, data.data(), data.size() * sizeof(T), cudaMemcpyHostToDevice), "上传");
@@ -144,6 +148,7 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device)
     cudaEventDestroy(stop);
     cudaStreamDestroy(stream);
 }
+
 int main()
 {
     try

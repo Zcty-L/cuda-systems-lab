@@ -1,0 +1,37 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "torch>=2.4"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "cuda-systems-lab"
+version = "0.1.0"
+description = "CUDA Systems Lab 的 PyTorch 算子接口"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.4"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+cmake.version = ">=3.24"
+build-dir = "build/wheel/{wheel_tag}"
+wheel.packages = ["python/cuda_lab"]
+install.components = ["python"]
+sdist.include = ["CMakeLists.txt", "cmake/**", "ops/**", "bindings/**", "include/**", "python/**"]
+
+[tool.scikit-build.cmake.define]
+CUDA_LAB_BUILD_PYTHON = "ON"
+CUDA_LAB_BUILD_BENCHMARKS = "OFF"
+CUDA_LAB_BUILD_TOOLS = "OFF"
+CUDA_LAB_BUILD_STUDIES = "OFF"
+BUILD_TESTING = "OFF"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = "-ra"
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(message)s"
+markers = ["cuda: 需要 CUDA GPU 的测试"]

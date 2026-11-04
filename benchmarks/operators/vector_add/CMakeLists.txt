@@ -1,0 +1,2 @@
+add_executable(vector_add_bench vector_add_bench.cu)
+target_link_libraries(vector_add_bench PRIVATE cuda_lab::vector_add)

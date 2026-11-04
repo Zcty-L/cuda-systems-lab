@@ -69,6 +69,7 @@ struct Resources
     cudaEvent_t start = nullptr, stop = nullptr;
     std::vector<cudaGraph_t> graphs;
     std::vector<cudaGraphExec_t> executions;
+
     ~Resources()
     {
         if(stream)

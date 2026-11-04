@@ -1,0 +1,10 @@
+# 显式注册算子，避免扫描实验文件而意外增加构建依赖。
+set(cuda_lab_available_ops vector_add softmax dwconv)
+list(REMOVE_DUPLICATES CUDA_LAB_OPS)
+foreach(op IN LISTS CUDA_LAB_OPS)
+    if(NOT op IN_LIST cuda_lab_available_ops)
+        message(FATAL_ERROR "未知算子 '${op}'；可选：${cuda_lab_available_ops}")
+    endif()
+    add_subdirectory(${op})
+endforeach()
+message(STATUS "CUDA Systems Lab 算子：${CUDA_LAB_OPS}")

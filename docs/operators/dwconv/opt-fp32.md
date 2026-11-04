@@ -91,13 +91,13 @@ S1 的 11×11 在 blocks/SM 不变时明显加速；S2 虽降至 3 blocks/SM，�
 ## 复现
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target device_query dwconv_test dwconv_opt_bench -j8
 mkdir -p build/dwconv-opt
 ./build/tools/device_query > build/dwconv-opt/device.log
 ctest --test-dir build -R '^dwconv_test$' --output-on-failure
-./build/benchmarks/operators/dwconv_opt_bench > build/dwconv-opt/run1.log
-./build/benchmarks/operators/dwconv_opt_bench > build/dwconv-opt/run2.log
+./build/benchmarks/operators/dwconv/dwconv_opt_bench > build/dwconv-opt/run1.log
+./build/benchmarks/operators/dwconv/dwconv_opt_bench > build/dwconv-opt/run2.log
 ```
 
 原始数据位于 `build/dwconv-opt/`：两次扫描包含全部逐轮样本、中位数和 min/max，以及 grid、工作集、资源、waves；另保留设备信息、正确性日志及源码和可执行文件 SHA256。

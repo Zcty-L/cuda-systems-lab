@@ -15,17 +15,29 @@
 
 | 算子 | 基准 | 分析与报告 |
 | --- | --- | --- |
-| Vector Add | [vector_add_bench.cu](operators/vector_add_bench.cu) | — |
-| DWConv | [FP32 版本对比及诊断](operators/dwconv_bench.cu) · [FP16 基准](operators/dwconv_fp16_bench.cu) · [权重缓存](operators/dwconv_weights_bench.cu) · [FP32 opt](operators/dwconv_opt_bench.cu) · [bias 加载](operators/dwconv_bias_bench.cu) · [cuDNN 融合](operators/dwconv_cudnn_bench.py) | [输入预取范围测量](../docs/operators/dwconv/prefetch-benchmark.md) · [FP32 prefetch 与 baseline 对比](../docs/operators/dwconv/prefetch-fp32.md) · [FP16 报告](../docs/operators/dwconv/prefetch-fp16.md) · [权重缓存报告](../docs/operators/dwconv/weights-cache.md) · [FP32 opt 报告](../docs/operators/dwconv/opt-fp32.md) · [cuDNN 融合与布局对比](../docs/operators/dwconv/cudnn-fusion.md) · [FP32 全量对比](../docs/operators/dwconv/fp32-full.md) · [FP16 全量对比](../docs/operators/dwconv/fp16-full.md) |
-| Softmax | [基础](operators/softmax_bench.cu) · [Cluster 对照](operators/softmax_cluster_bench.cu) | [NCU 脚本](operators/softmax_roofline.py) · [Roofline](../docs/operators/softmax/roofline.md) · [Cluster](../docs/operators/softmax/cluster.md) |
+| Vector Add | [原生 CUDA](operators/vector_add/vector_add_bench.cu) · [Python 多后端](operators/vector_add/benchmark.py) | [用例](operators/vector_add/cases.json) · [构建与运行](../docs/guides/build/usage.md) · [框架验证](../docs/operators/vector_add/validation.md) |
+| DWConv | [FP32 版本对比及诊断](operators/dwconv/dwconv_bench.cu) · [FP16 基准](operators/dwconv/dwconv_fp16_bench.cu) · [权重缓存](operators/dwconv/dwconv_weights_bench.cu) · [FP32 opt](operators/dwconv/dwconv_opt_bench.cu) · [bias 加载](operators/dwconv/dwconv_bias_bench.cu) · [cuDNN 融合](operators/dwconv/dwconv_cudnn_bench.py) | [输入预取范围测量](../docs/operators/dwconv/prefetch-benchmark.md) · [FP32 prefetch 与 baseline 对比](../docs/operators/dwconv/prefetch-fp32.md) · [FP16 报告](../docs/operators/dwconv/prefetch-fp16.md) · [权重缓存报告](../docs/operators/dwconv/weights-cache.md) · [FP32 opt 报告](../docs/operators/dwconv/opt-fp32.md) · [cuDNN 融合与布局对比](../docs/operators/dwconv/cudnn-fusion.md) · [FP32 全量对比](../docs/operators/dwconv/fp32-full.md) · [FP16 全量对比](../docs/operators/dwconv/fp16-full.md) |
+| Softmax | [基础](operators/softmax/softmax_bench.cu) · [Cluster 对照](operators/softmax/softmax_cluster_bench.cu) | [NCU 脚本](operators/softmax/softmax_roofline.py) · [Roofline](../docs/operators/softmax/roofline.md) · [Cluster](../docs/operators/softmax/cluster.md) |
 
-DWConv 结果绘图脚本：[dwconv_plot.py](operators/dwconv_plot.py)。按 H、C 排列子图，横轴为 batch size，纵轴为 TFLOPs/s；正式结果与图片归档到 [5070 Ti 实验目录](../docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/README.md)和[RTX 4090 实验目录](../docs/operators/dwconv/results/2026-10-13-rtx4090/README.md)。图标题从 CSV 同目录的 `device.txt` 读取设备名；优先使用 Times New Roman，缺少时使用 Liberation Serif，也可通过 `--font-file` 指定 Times New Roman 字体文件。
+DWConv 结果绘图脚本：[dwconv_plot.py](operators/dwconv/dwconv_plot.py)。按 H、C 排列子图，横轴为 batch size，纵轴为 TFLOPs/s；正式结果与图片归档到 [5070 Ti 实验目录](../docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/README.md)和[RTX 4090 实验目录](../docs/operators/dwconv/results/2026-10-13-rtx4090/README.md)。图标题从 CSV 同目录的 `device.txt` 读取设备名；优先使用 Times New Roman，缺少时使用 Liberation Serif，也可通过 `--font-file` 指定 Times New Roman 字体文件。
 
 ```bash
 conda activate py311
-python benchmarks/operators/dwconv_plot.py --csv docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/fp32/comparison.csv --dtype fp32 --k 11 --output docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/fp32/plots/benchmark_fp32_k11.png
+python benchmarks/operators/dwconv/dwconv_plot.py --csv docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/fp32/comparison.csv --dtype fp32 --k 11 --output docs/operators/dwconv/results/2026-10-13-rtx5070ti-laptop/fp32/plots/benchmark_fp32_k11.png
 ```
 
 ## 存储测量入口
 
 [存储微基准](memory/README.md)：shared memory、L1、L2、DRAM 的带宽与延迟，共 8 项；[导入报告](../docs/benchmarks/memory/baseline.md)记录配置、计时范围和验证结果。
+
+## Python 多后端对比
+
+从仓库根目录运行 `python -m benchmarks.operators.vector_add.benchmark --mode graph`。
+
+- 算子目录的 `backends.py` 只准备输出和待测函数；输入、正确性、计时及结果由统一入口管理。公共工具放 `common/`。
+- `--mode event` 用 CUDA Event 包围一批普通调用，可能包含主机提交间隙；`--mode graph` 捕获一批调用并计时 replay，按调用数摊销。两种口径分别报告，不能混为单 kernel 的纯执行时间。
+- `--api-time` 另报 `api_batch_us`：使用主机计时，包含一批预分配输出的 API 调用和批末同步，按调用数摊销。它不包含输出分配，也不代表单次请求延迟。
+- 每组重复采样，保存每次样本、中位数和最小/最大值。默认用例是延迟和接口对比示例；要建立吞吐平台，应按公共配置补做 waves 扫描、occupancy 与缓存条件记录。
+- 结果目录包含 `environment.json`、`config.json`、`device-query.log`、`results.jsonl` 和 `summary.csv`。记录实际包路径、构建与运行提交状态；`speedup_vs_torch = torch_gpu_us / backend_gpu_us`。
+- 空输入记为 `skip` 并说明原因；后端导入、正确性或计时失败记为 `error`，入口返回非零。错误结果不生成加速比。
+- 临时结果留在 `build/`；正式实验选择数据、配置与配图后按[文档规则](../docs/README.md)归档。

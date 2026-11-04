@@ -20,6 +20,7 @@ namespace
 {
 
 using Clock = std::chrono::steady_clock;
+
 double elapsed_ms(Clock::time_point start)
 {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
@@ -41,6 +42,7 @@ struct Options
     int case_index = -1, warmup = 20, iterations = 100;
     bool check_cpu = false, list = false, quick = false;
 };
+
 Options options;
 
 struct ShapeCase
@@ -122,11 +124,13 @@ Conv2DParam make_param(const ShapeCase &s)
 struct Events
 {
     cudaEvent_t start{}, stop{};
+
     Events()
     {
         check(cudaEventCreate(&start));
         check(cudaEventCreate(&stop));
     }
+
     ~Events()
     {
         cudaEventDestroy(start);
@@ -156,20 +160,25 @@ template <class Launch> void measure(Launch launch, cudaStream_t stream = nullpt
 template <class T> struct DeviceBuffer
 {
     T *ptr = nullptr;
+
     explicit DeviceBuffer(size_t n)
     {
         check(cudaMalloc(&ptr, n * sizeof(T)));
     }
+
     ~DeviceBuffer()
     {
         cudaFree(ptr);
     }
+
     DeviceBuffer(const DeviceBuffer &) = delete;
     DeviceBuffer &operator=(const DeviceBuffer &) = delete;
+
     void upload(const std::vector<T> &v)
     {
         check(cudaMemcpy(ptr, v.data(), v.size() * sizeof(T), cudaMemcpyHostToDevice));
     }
+
     void release()
     {
         check(cudaFree(ptr));
@@ -184,6 +193,7 @@ template <class T> T convert(float v)
     else
         return v;
 }
+
 template <class T> float value(T v)
 {
     if constexpr(std::is_same_v<T, __half>)
@@ -409,21 +419,26 @@ template <class T> struct Buffer
 {
     T *ptr = nullptr;
     size_t size;
+
     explicit Buffer(size_t n) : size(n)
     {
         check(cudaMalloc(&ptr, n * sizeof(T)));
         check(cudaMemset(ptr, 0xff, n * sizeof(T)));
     }
+
     ~Buffer()
     {
         cudaFree(ptr);
     }
+
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
+
     void upload(const std::vector<T> &x)
     {
         check(cudaMemcpy(ptr, x.data(), size * sizeof(T), cudaMemcpyHostToDevice));
     }
+
     void compare(const std::vector<double> &ref, const char *name)
     {
         std::vector<T> x(size);
@@ -445,10 +460,12 @@ template <class T> struct Buffer
 struct Stream
 {
     cudaStream_t value{};
+
     Stream()
     {
         check(cudaStreamCreateWithFlags(&value, cudaStreamNonBlocking));
     }
+
     ~Stream()
     {
         cudaStreamDestroy(value);
@@ -603,6 +620,7 @@ template <class T> void run_backward(const ShapeCase &shape)
 const std::array<std::string, 13> kKernels = {
     "baseline",         "baseline-k128", "baseline-k64",  "baseline-k32", "prefetch",    "opt",           "pytorch",
     "pytorch-backward", "gmem",          "gmem-l2-entry", "cudnn",        "cudnn-fused", "cudnn-separate"};
+
 void usage()
 {
     std::cout << "用法：dwconv_test [--kernel baseline|baseline-k128|baseline-k64|baseline-k32|prefetch|opt|pytorch|"

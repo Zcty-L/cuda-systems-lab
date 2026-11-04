@@ -15,16 +15,20 @@ const char *names[] = {"baseline", "gmem", "gmem_l2"};
 template <typename T> struct Buffer
 {
     T *ptr = nullptr;
+
     explicit Buffer(size_t count)
     {
         check_cuda(cudaMalloc(&ptr, count * sizeof(T)), "分配");
     }
+
     ~Buffer()
     {
         cudaFree(ptr);
     }
+
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
+
     void upload(const std::vector<T> &data)
     {
         check_cuda(cudaMemcpy(ptr, data.data(), data.size() * sizeof(T), cudaMemcpyHostToDevice), "上传");
@@ -224,6 +228,7 @@ void run(int n, int c, int h, int k, int stride, const cudaDeviceProp &device, b
     cudaStreamDestroy(stream);
     check_cuda(cudaCtxResetPersistingL2Cache(), "用例结束重置 L2");
 }
+
 int main(int argc, char **argv)
 {
     try

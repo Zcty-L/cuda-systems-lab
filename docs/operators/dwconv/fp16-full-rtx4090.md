@@ -11,10 +11,10 @@
 ## 复现与数据
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target dwconv_test device_query -j 8
 CUDA_VISIBLE_DEVICES=0 ./build/tools/device_query
-CUDA_VISIBLE_DEVICES=0 conda run -n py311 python benchmarks/operators/dwconv_full_bench.py \
+CUDA_VISIBLE_DEVICES=0 conda run -n py311 python benchmarks/operators/dwconv/dwconv_full_bench.py \
   --dtype fp16 --include-opt --output build/dwconv-full-fp16-rtx4090-gpu0
 ```
 

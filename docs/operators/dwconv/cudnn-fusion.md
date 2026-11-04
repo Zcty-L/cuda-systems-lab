@@ -26,17 +26,17 @@ FP32 禁用 TF32；Graph 过滤降精度输入、低精度归约及 FP32 Tensor 
 - 下列测量使用 stride=1、padding=K/2、bias 开启；复用同一组输入，缓存不主动清空，未锁频。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDWCONV_TEST_CUDNN=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv -DDWCONV_TEST_CUDNN=ON
 cmake --build build --target dwconv_test device_query --parallel
 ./build/tools/device_query
 for kernel in cudnn-separate cudnn-fused cudnn; do
-    ./build/tests/dwconv_test --quick --kernel "$kernel" --dtype all \
+    ./build/tests/native/dwconv_test --quick --kernel "$kernel" --dtype all \
         --check-cpu --warmup 0 --iterations 1
 done
 
 source /home/if/miniforge3/etc/profile.d/conda.sh
 conda activate py311
-python benchmarks/operators/dwconv_cudnn_bench.py --kernels cudnn-separate cudnn-fused cudnn \
+python benchmarks/operators/dwconv/dwconv_cudnn_bench.py --kernels cudnn-separate cudnn-fused cudnn \
     --layouts nchw --output build/dwconv-cudnn-fusion/recheck
 ```
 
@@ -98,7 +98,7 @@ python benchmarks/operators/dwconv_cudnn_bench.py --kernels cudnn-separate cudnn
 ./build/tools/device_query
 nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true \
     --output build/dwconv-cudnn-fusion/profile-7-fp16-cudnn-graph \
-    ./build/tests/dwconv_test --quick --case 7 --kernel cudnn-graph \
+    ./build/tests/native/dwconv_test --quick --case 7 --kernel cudnn-graph \
     --dtype fp16 --warmup 0 --iterations 3
 nsys stats --report cuda_gpu_kern_sum --format csv \
     build/dwconv-cudnn-fusion/profile-7-fp16-cudnn-graph.nsys-rep
@@ -114,12 +114,12 @@ nsys stats --report cuda_gpu_kern_sum --format csv \
 `--layout nhwc` 在 preprocess 中进行主机输入重排并单独打印耗时；校验直接读取 NHWC 输出。下表比较原生布局的计算阶段，**不是 NCHW 输入 → GPU 转 NHWC → 卷积 → GPU 转回 NCHW 的端到端时间**。若调用方已经使用 NHWC，则无需这些外部转换。
 
 ```bash
-./build/tests/dwconv_test --quick --kernel cudnn --layout nhwc --dtype all \
+./build/tests/native/dwconv_test --quick --kernel cudnn --layout nhwc --dtype all \
     --check-cpu --warmup 0 --iterations 1
 # 默认仅测 Graph + NCHW；布局对比显式启用两种布局
-python benchmarks/operators/dwconv_cudnn_bench.py --layouts nchw nhwc
+python benchmarks/operators/dwconv/dwconv_cudnn_bench.py --layouts nchw nhwc
 # 可选：同时比较 legacy 融合和分离路径
-python benchmarks/operators/dwconv_cudnn_bench.py --kernels cudnn cudnn-fused cudnn-separate \
+python benchmarks/operators/dwconv/dwconv_cudnn_bench.py --kernels cudnn cudnn-fused cudnn-separate \
     --layouts nchw nhwc --output build/dwconv-cudnn-layout/all-modes
 ```
 
@@ -180,13 +180,13 @@ Nsight Systems 对 case 7/0 × 两种精度 × 两种布局独立采样：**Grap
 复现补充对照与 profiler：
 
 ```bash
-python benchmarks/operators/dwconv_cudnn_bench.py --cases 7 0 \
+python benchmarks/operators/dwconv/dwconv_cudnn_bench.py --cases 7 0 \
     --kernels cudnn-separate cudnn-fused --layouts nchw nhwc --rounds 3 \
     --output build/dwconv-cudnn-layout/controls
 ./build/tools/device_query
 nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true \
     --output build/dwconv-cudnn-layout/profile-0-fp16-nhwc \
-    ./build/tests/dwconv_test --quick --case 0 --kernel cudnn --layout nhwc \
+    ./build/tests/native/dwconv_test --quick --case 0 --kernel cudnn --layout nhwc \
     --dtype fp16 --warmup 0 --iterations 3
 nsys stats --report cuda_gpu_kern_sum --format csv \
     build/dwconv-cudnn-layout/profile-0-fp16-nhwc.nsys-rep

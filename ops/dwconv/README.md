@@ -23,26 +23,26 @@
 ## 构建与正确性验证
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target dwconv_test device_query --parallel
 ./build/tools/device_query
 ctest --test-dir build -R '^dwconv_test$' --output-on-failure
 ```
 
-`tests/dwconv_test.cu` 是统一入口，全局 `std::vector<ShapeCase>` 由函数构建：编号 0–22 为 `opt_conv2d_groups_fp32.cu` 的 23 组常规用例，stride 统一改为 1，保留原有输入尺寸、核尺寸和通道数（原名称中的输出尺寸及分派阈值不再适用）；编号 23–652 为 N={1,2,4,8,16,32,64}、C={32,64,128,256,512,1024}、H=W={40,80,160}、Kh=Kw={3,5,7,9,11} 的全部 630 种组合，stride=1、padding=K/2，启用 bias；N、C、H、K 取值覆盖 CUDAOP 的 `dwconv_k128.cu` 完整组合。所有实现扫描同一张表，按通道对齐、核容量和 bias 支持筛选；`--case ID` 可固定同一 shape 比较不同实现。通过 `--list-cases` 查询编号。`--quick` 仅选择前 23 组常规用例，CTest 使用此模式；默认仍遍历全部 653 组。全量 CPU 校验耗时较长，可用 `--quick` 或 `--case ID` 缩小范围。
+`tests/native/dwconv_test.cu` 是统一入口，全局 `std::vector<ShapeCase>` 由函数构建：编号 0–22 为 `opt_conv2d_groups_fp32.cu` 的 23 组常规用例，stride 统一改为 1，保留原有输入尺寸、核尺寸和通道数（原名称中的输出尺寸及分派阈值不再适用）；编号 23–652 为 N={1,2,4,8,16,32,64}、C={32,64,128,256,512,1024}、H=W={40,80,160}、Kh=Kw={3,5,7,9,11} 的全部 630 种组合，stride=1、padding=K/2，启用 bias；N、C、H、K 取值覆盖 CUDAOP 的 `dwconv_k128.cu` 完整组合。所有实现扫描同一张表，按通道对齐、核容量和 bias 支持筛选；`--case ID` 可固定同一 shape 比较不同实现。通过 `--list-cases` 查询编号。`--quick` 仅选择前 23 组常规用例，CTest 使用此模式；默认仍遍历全部 653 组。全量 CPU 校验耗时较长，可用 `--quick` 或 `--case ID` 缩小范围。
 
 ```bash
 # 默认：FP32 baseline 按核面积分派，CPU 校验关闭，预热 20 次、计时 100 次
-./build/tests/dwconv_test
-./build/tests/dwconv_test --list-cases
-./build/tests/dwconv_test --kernel opt --dtype fp16 --case 1
-./build/tests/dwconv_test --quick --kernel cudnn --layout nhwc --dtype all --check-cpu --warmup 1 --iterations 2
+./build/tests/native/dwconv_test
+./build/tests/native/dwconv_test --list-cases
+./build/tests/native/dwconv_test --kernel opt --dtype fp16 --case 1
+./build/tests/native/dwconv_test --quick --kernel cudnn --layout nhwc --dtype all --check-cpu --warmup 1 --iterations 2
 # legacy 融合对照
-./build/tests/dwconv_test --kernel cudnn-fused --layout nhwc --dtype fp16 --case 7
-./build/tests/dwconv_test --kernel prefetch --dtype fp32 --warmup 20 --iterations 100
+./build/tests/native/dwconv_test --kernel cudnn-fused --layout nhwc --dtype fp16 --case 7
+./build/tests/native/dwconv_test --kernel prefetch --dtype fp32 --warmup 20 --iterations 100
 # 快速测试全部兼容实现；开启独立 CPU 校验（与 CTest 一致）
-./build/tests/dwconv_test --quick --kernel all --dtype all --check-cpu --warmup 0 --iterations 1
-./build/tests/dwconv_test --kernel pytorch-backward --dtype fp32 --check-cpu --iterations 1
+./build/tests/native/dwconv_test --quick --kernel all --dtype all --check-cpu --warmup 0 --iterations 1
+./build/tests/native/dwconv_test --kernel pytorch-backward --dtype fp32 --check-cpu --iterations 1
 ```
 
 `--kernel` 支持 `baseline`（FP32/FP16 均按核面积选择 k32/k64/k128）、`baseline-k128`、`baseline-k64`、`baseline-k32`、`prefetch`、`opt`、`pytorch`（前向）、`pytorch-backward`、`gmem`、`gmem-l2-entry`、`cudnn`、`cudnn-fused`、`cudnn-separate` 或 `all`；`--dtype` 支持 `fp32`、`fp16` 或 `all`。PyTorch 前向、反向均支持 FP32/FP16，gmem 仅支持 FP32。不兼容组合跳过并汇总，完全没有可执行组合时报错。`gmem-l2-entry` 仅覆盖计算入口；实际 L2 策略对比仍使用 `dwconv_weights_bench`。
@@ -63,7 +63,7 @@ cuDNN 的 FP32/FP16 计算封装在 [dwconv_cudnn.cu](dwconv_cudnn.cu) / [dwconv
 
 CMake 默认 `DWCONV_TEST_CUDNN=ON`；缺少开发库时其余实现仍可构建，显式选择 cuDNN 路径会报错，`all` 跳过它们。可用 `-DDWCONV_TEST_CUDNN=OFF` 关闭。
 
-融合与布局的正确性、重复测量和 profiler 结果见 [cuDNN 融合与布局对比](../../docs/operators/dwconv/cudnn-fusion.md)，复测入口为 [dwconv_cudnn_bench.py](../../benchmarks/operators/dwconv_cudnn_bench.py)。
+融合与布局的正确性、重复测量和 profiler 结果见 [cuDNN 融合与布局对比](../../docs/operators/dwconv/cudnn-fusion.md)，复测入口为 [dwconv_cudnn_bench.py](../../benchmarks/operators/dwconv/dwconv_cudnn_bench.py)。
 
 分阶段计时：
 
@@ -103,9 +103,9 @@ packed_weights[pair * KhKw + k] =
 kernel 一次加载全部配对权重到共享内存，直接读取 bias 并转为 FP32 初始化 `float2 output_frag[4]`。half2 输入和权重转为 float2，两个通道独立按原始 tap 顺序执行 FP32 FMA，写回时才舍入到 FP16，与 PyTorch 前向的累加精度一致；此处无需跨线程归约。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target dwconv_test --parallel
-./build/tests/dwconv_test --dtype fp16 --kernel all --check-cpu --warmup 0 --iterations 1
+./build/tests/native/dwconv_test --dtype fp16 --kernel all --check-cpu --warmup 0 --iterations 1
 ```
 
 历史 FP16 累加版本的原始基线测试包含 11 组配置，分别运行容量范围内的基线，共 27 次 kernel 验证，覆盖多 batch、多通道组、padding、stride、输出尾块、非整除 4 的 tap 数和 32/64/128 容量边界。CPU 从未打包的权重独立计算，用 double FMA 后逐步舍入到 half 模拟 FP16 累加，并要求结果数值完全一致；使用非整齐二进制输入值覆盖舍入行为。已通过正确性验证，未进行性能测量。
@@ -148,10 +148,10 @@ FP16 对应接口为 `launch_pytorch_forward_fp16` 和 `launch_pytorch_backward_
 输出均覆盖写入，不需要清零或工作区，不使用全局原子加。只计算 dX 时 input 可为空；只计算 dK 时 weight 可为空；只计算 db 时 input、weight 均可为空。db 表示假设存在逐通道加性偏置时的梯度；无偏置层通常直接传空 grad_bias。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target dwconv_test --parallel
-./build/tests/dwconv_test --kernel pytorch --dtype fp16 --check-cpu --warmup 0 --iterations 1
-./build/tests/dwconv_test --kernel pytorch-backward --dtype all --check-cpu --warmup 0 --iterations 1
+./build/tests/native/dwconv_test --kernel pytorch --dtype fp16 --check-cpu --warmup 0 --iterations 1
+./build/tests/native/dwconv_test --kernel pytorch-backward --dtype all --check-cpu --warmup 0 --iterations 1
 ```
 
 测试以 CPU double 前向及 scatter 反向为独立参考，小张量额外做有限差分。此前使用统一测试的 43 组配置，分别验证两种精度，包括非对齐通道、多 batch（含超过 8 个 warp 的 batch）、非方形核、stride 1/2/3、全 padding 输出、未采样输入、输出尾部、可选 bias、非默认流、选择性梯度和重复调用覆盖写入。本次仅运行正确性验证，单次 launch 时间不作为性能结论。
@@ -164,7 +164,7 @@ cmake --build build --target dwconv_test --parallel
 
 该结构为输入加载与独立乘加提供重叠机会，但实际 overlap、寄存器占用及性能取决于编译调度和设备；没有使用异步 shared 拷贝。统一 `dwconv_test` 支持该版本的分阶段计时和可选 CPU 校验。
 
-验证命令：`./build/tests/dwconv_test --kernel prefetch --check-cpu --warmup 0 --iterations 1`。新增版本已通过全部 17 组配置。此前 k32 累加器初始化问题已由用户修复，2026-10-10 完整 `dwconv_test` 复测通过。
+验证命令：`./build/tests/native/dwconv_test --kernel prefetch --check-cpu --warmup 0 --iterations 1`。新增版本已通过全部 17 组配置。此前 k32 累加器初始化问题已由用户修复，2026-10-10 完整 `dwconv_test` 复测通过。
 
 `dwconv_bench` 比较 baseline 和 prefetch。实现差别、性能数据和原因分析见[FP32 prefetch 与 baseline 对比](../../docs/operators/dwconv/prefetch-fp32.md)。`--large-batch` 覆盖 N=8/16/32、H=W=128；`--profile` 仅执行两个版本单次启动，供 NCU 采集。
 
@@ -176,4 +176,4 @@ cmake --build build --target dwconv_test --parallel
 
 FP32 opt 的 bias 直接读取与 warp shuffle 广播对照入口为 `dwconv_bias_bench`。
 
-完整 shape 集合的 cuDNN、baseline、PyTorch、opt 对比见 [FP32 全量测试](../../docs/operators/dwconv/fp32-full.md) 和 [FP16 全量测试](../../docs/operators/dwconv/fp16-full.md)，运行入口为 [dwconv_full_bench.py](../../benchmarks/operators/dwconv_full_bench.py)。
+完整 shape 集合的 cuDNN、baseline、PyTorch、opt 对比见 [FP32 全量测试](../../docs/operators/dwconv/fp32-full.md) 和 [FP16 全量测试](../../docs/operators/dwconv/fp16-full.md)，运行入口为 [dwconv_full_bench.py](../../benchmarks/operators/dwconv/dwconv_full_bench.py)。
