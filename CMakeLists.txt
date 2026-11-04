@@ -18,7 +18,7 @@ option(CUDA_LAB_BUILD_PYTHON "构建 PyTorch 接口和 Python 包" OFF)
 option(CUDA_LAB_BUILD_BENCHMARKS "构建原生性能基准" ON)
 option(CUDA_LAB_BUILD_TOOLS "构建设备查询等工具" ON)
 option(CUDA_LAB_BUILD_STUDIES "构建已注册的架构学习实验" OFF)
-set(CUDA_LAB_OPS "vector_add" CACHE STRING "本次构建的算子，以分号分隔；空值仅构建工具")
+set(CUDA_LAB_OPS "vector_add" CACHE STRING "本次构建的算子，以分号分隔；空值不构建算子")
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(CudaLabOperator)
@@ -30,6 +30,7 @@ endif()
 
 if(CUDA_LAB_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks/operators)
+    add_subdirectory(benchmarks/memory)
 endif()
 
 if(CUDA_LAB_BUILD_TOOLS)

@@ -58,9 +58,13 @@ y = cuda_lab.vector_add(a, b)
 
 原生测试位于 `build/tests/native/`，算子基准位于 `build/benchmarks/operators/{name}/`。
 
+默认选择 `vector_add`；通过 `-DCUDA_LAB_OPS="vector_add;softmax;dwconv"` 启用全部算子，或单独选择所需算子。
+
 | 算子 | 正确性测试 | 性能基准 |
 | --- | --- | --- |
 | [vector_add](ops/vector_add/) | CTest + [pytest](tests/python/test_vector_add.py) | [原生 / PyTorch 对比](benchmarks/operators/vector_add/) |
+| [softmax](ops/softmax/README.md) | `softmax_test` | `softmax_bench`、`softmax_cluster_bench` |
+| [dwconv](ops/dwconv/README.md) | `dwconv_test` | `dwconv_bench`、`dwconv_fp16_bench`、`dwconv_opt_bench` |
 
 完成原生构建和 Python 安装后，在仓库根目录运行：
 
@@ -69,6 +73,8 @@ python -m benchmarks.operators.vector_add.benchmark --mode graph
 ```
 
 入口会先运行设备查询，再比较预分配输出的 `cuda_lab.vector_add_out` 与 `torch.add(out=)`；结果默认保存到 `build/results/vector_add/`。
+
+存储微基准：[运行入口](benchmarks/memory/README.md) · [导入报告](docs/benchmarks/memory/baseline.md)，可执行文件位于 `build/benchmarks/memory/`。
 
 测量规范见 [benchmarks](benchmarks/README.md)，报告见 [文档索引](docs/README.md)。
 

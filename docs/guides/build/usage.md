@@ -18,6 +18,16 @@ ctest --preset native
 
 `native` preset 使用 `build/`，默认构建示例算子、原生测试、基准和工具。原有 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` 用法继续有效。正式性能测量前必须先运行设备查询。
 
+已注册 `vector_add`、`softmax` 和 `dwconv`；只构建所选算子及其测试和基准。构建全部算子时执行：
+
+```bash
+cmake --preset native -DCUDA_LAB_OPS="vector_add;softmax;dwconv"
+cmake --build --preset native --parallel 4
+ctest --preset native
+```
+
+存储微基准随 `CUDA_LAB_BUILD_BENCHMARKS` 启用，不依赖算子选择。DWConv 的 cuDNN 对比仅在选择 `dwconv` 时查找依赖，缺少 cuDNN 会跳过该后端；可通过 `DWCONV_TEST_CUDNN=OFF` 关闭。Softmax cluster 的架构限制沿用模块配置，见[Cluster 对照](../../operators/softmax/cluster.md)。当前 Python 接口仅提供 Vector Add，启用 Python 时 `CUDA_LAB_OPS` 必须包含 `vector_add`。
+
 | 选项 | 默认值 | 用途 |
 | --- | --- | --- |
 | `CUDA_LAB_OPS` | `vector_add` | 算子列表，以分号分隔；空值仅保留其他启用目标 |

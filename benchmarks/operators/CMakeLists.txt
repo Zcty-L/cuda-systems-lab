@@ -1,3 +1,5 @@
-if(TARGET cuda_ops_vector_add)
-    add_subdirectory(vector_add)
-endif()
+foreach(op IN ITEMS vector_add softmax dwconv)
+    if(TARGET cuda_ops_${op})
+        add_subdirectory(${op})
+    endif()
+endforeach()

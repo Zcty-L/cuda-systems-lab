@@ -1,0 +1,69 @@
+
+--- 配置：查询所有 CUDA 可见设备 ---
+  Device count                            1
+  CUDA driver API version                 13.2
+  CUDA runtime version                    13.2
+
+--- 设备标识 ---
+  Device                                  0
+  Name                                    NVIDIA GeForce RTX 5070 Ti Laptop GPU
+  Compute capability                      12.0
+  SM architecture                         sm_120
+  Multiprocessors (SM)                    46
+  Warp size                               32
+
+--- 存储层次 ---
+  Global memory                           11.94 GiB (12820480000 B)
+  L2 cache                                36.00 MiB (37748736 B)
+  Shared memory / block                   48.00 KiB (49152 B)
+  Shared memory / block (opt-in)          99.00 KiB (101376 B)
+  Shared memory / SM                      100.00 KiB (102400 B)
+  Constant memory                         64.00 KiB (65536 B)
+  Registers / block                       65536
+  Registers / SM                          65536
+
+--- 时钟与理论显存带宽（非实测） ---
+  GPU clock (MHz)                         1612.00
+  Memory clock (MHz)                      14001.00
+  Memory bus width (bit)                  192
+  Estimated DDR bandwidth (GB/s)          672.05
+
+--- 执行与驻留限制 ---
+  Max threads / block                     1024
+  Max threads / SM                        1536
+  Max blocks / SM                         24
+  Max warps / SM                          48
+  Max block dimensions                    1024, 1024, 64
+  Max grid dimensions                     2147483647, 65535, 65535
+  Async engines                           1
+
+--- 驻留线程上限参考（忽略寄存器和共享内存约束） ---
+  Block threads | Blocks/SM | Warps/SM | Threads/SM
+             64 |        24 |       48 |       1536
+            128 |        12 |       48 |       1536
+            192 |         8 |       48 |       1536
+            256 |         6 |       48 |       1536
+            320 |         4 |       40 |       1280
+            384 |         4 |       48 |       1536
+            448 |         3 |       42 |       1344
+            512 |         3 |       48 |       1536
+            576 |         2 |       36 |       1152
+            640 |         2 |       40 |       1280
+            704 |         2 |       44 |       1408
+            768 |         2 |       48 |       1536
+            832 |         1 |       26 |        832
+            896 |         1 |       28 |        896
+            960 |         1 |       30 |        960
+           1024 |         1 |       32 |       1024
+
+--- 运行时报告的设备特性（1=是，0=否） ---
+  Unified addressing                      1
+  Concurrent kernels                      1
+  Managed memory                          1
+  Concurrent managed access               0
+  Pageable memory access                  0
+  ECC enabled                             0
+  Can map host memory                     1
+  Cooperative launch                      1
+
+[SUCCESS] 设备查询完成。
