@@ -64,7 +64,9 @@ y = cuda_lab.vector_add(a, b)
 | --- | --- | --- |
 | [vector_add](ops/vector_add/) | CTest + [pytest](tests/python/test_vector_add.py) | [原生 / PyTorch 对比](benchmarks/operators/vector_add/) |
 | [softmax](ops/softmax/README.md) | `softmax_test` | `softmax_bench`、`softmax_cluster_bench` |
-| [dwconv](ops/dwconv/README.md) | `dwconv_test` | `dwconv_bench`、`dwconv_fp16_bench`、`dwconv_opt_bench` |
+| [dwconv](ops/dwconv/README.md) | 待 Python 绑定后补充 | [多后端测速](benchmarks/operators/dwconv/README.md) |
+
+DWConv cuDNN 的布局、执行路径与候选方案选择见 [cuDNN 初始化与执行方式](docs/operators/dwconv/cudnn-execution.md)。
 
 完成原生构建和 Python 安装后，在仓库根目录运行：
 

@@ -1,5 +1,6 @@
-#include "dwconv_opt.cuh"
+#include <stdexcept>
 #include <cuda_lab/ptx_utils.cuh>
+#include "dwconv_opt.cuh"
 
 namespace
 {
@@ -17,17 +18,16 @@ __device__ __forceinline__ int swizzle_shared_input_x(int input_x)
     return input_x ^ ((input_x >> 3) & 1);
 }
 
-template <int KernelSize, bool ShuffleBias = false>
-__global__ void conv2d_4x128x256_groups_kernel(float *inputs, float *weights, float *bias, float *outputs,
-                                               Conv2DParam param)
+template <int KernelSize, bool UseBias>
+__global__ void dwconv_opt_fp32_groups_kernel(float *inputs, float *weights, float *bias, float *outputs,
+                                              Conv2DParam param)
 {
     constexpr bool specialized_kernel = KernelSize > 0;
     constexpr int specialized_kernel_elements = KernelSize * KernelSize;
     int kernel_width = specialized_kernel ? KernelSize : param.Kw;
     int kernel_elements = specialized_kernel ? specialized_kernel_elements : param.KhKw;
 
-    __shared__ __align__(2 * 1024) char smem[4 * 128 * 4];
-    auto *smemweight = reinterpret_cast<float *>(smem);
+    __shared__ __align__(16) float smemweight[4 * 128];
 
     int out_pos = blockIdx.x * 256 + threadIdx.x;
     int posh_ori = (out_pos / param.out_w) * param.Sh - param.Ph;
@@ -45,22 +45,17 @@ __global__ void conv2d_4x128x256_groups_kernel(float *inputs, float *weights, fl
     float input_frag[4][4];
     float output_frag[4];
 
-    // 编译期开关仅用于 bias 加载对照；默认保留直接读取。
-    if constexpr(ShuffleBias)
-    {
-        int lane = threadIdx.x & 31;
-        float value = 0.0f;
-        if(lane < 4)
-            value = bias[blockIdx.y * 4 + lane];
 #pragma unroll
-        for(int i = 0; i < 4; ++i)
-            output_frag[i] = __shfl_sync(0xffffffff, value, i);
-    }
-    else
+    for(int i = 0; i < 4; ++i)
     {
-#pragma unroll
-        for(int i = 0; i < 4; ++i)
+        if constexpr(UseBias)
+        {
             output_frag[i] = bias[blockIdx.y * 4 + i];
+        }
+        else
+        {
+            output_frag[i] = 0.0f;
+        }
     }
 
     ptx::ldg_nc_0(weight_ldg_reg[0], weight_ldg_ptr, threadIdx.x % 64 * 2 < kernel_elements);
@@ -152,37 +147,27 @@ __global__ void conv2d_4x128x256_groups_kernel(float *inputs, float *weights, fl
     }
 }
 
-static void launch_custom(void *inputs, void *weights, void *bias, void *outputs, Conv2DParam param, int n,
-                          cudaStream_t stream)
+template <int KernelSize, bool UseBias>
+void launch_dwconv_opt_fp32_impl(float *inputs, float *weights, float *bias, float *outputs, const Conv2DParam &param,
+                                 int n, cudaStream_t stream)
 {
     dim3 block(256);
     dim3 grid((param.outHW + 255) / 256, param.out_ch / 4, n);
-    conv2d_4x128x256_groups_kernel<0>
-        <<<grid, block, 0, stream>>>(static_cast<float *>(inputs), static_cast<float *>(weights),
-                                     static_cast<float *>(bias), static_cast<float *>(outputs), param);
+    dwconv_opt_fp32_groups_kernel<KernelSize, UseBias>
+        <<<grid, block, 0, stream>>>(inputs, weights, bias, outputs, param);
 }
 
-template <int KernelSize>
-static void launch_specialized(void *inputs, void *weights, void *bias, void *outputs, Conv2DParam param, int n,
-                               cudaStream_t stream)
-{
-    dim3 block(256);
-    dim3 grid((param.outHW + 255) / 256, param.out_ch / 4, n);
-    conv2d_4x128x256_groups_kernel<KernelSize>
-        <<<grid, block, 0, stream>>>(static_cast<float *>(inputs), static_cast<float *>(weights),
-                                     static_cast<float *>(bias), static_cast<float *>(outputs), param);
-}
-
-__global__ void conv2d_1x128x256_groups_k7_kernel(const float *inputs, const float *weights, const float *bias,
-                                                  float *outputs, Conv2DParam param)
+template <bool UseBias>
+__global__ void dwconv_opt_fp32_k7_single_channel_kernel(const float *inputs, const float *weights, const float *bias,
+                                                         float *outputs, Conv2DParam param)
 {
     constexpr int kernel_size = 7;
     constexpr int kernel_elements = kernel_size * kernel_size;
-    __shared__ float shared_weights[kernel_elements];
+    __shared__ __align__(16) float smemweight[kernel_elements];
 
     if(threadIdx.x < kernel_elements)
     {
-        shared_weights[threadIdx.x] = weights[blockIdx.y * kernel_elements + threadIdx.x];
+        smemweight[threadIdx.x] = weights[blockIdx.y * kernel_elements + threadIdx.x];
     }
     __syncthreads();
 
@@ -190,7 +175,16 @@ __global__ void conv2d_1x128x256_groups_k7_kernel(const float *inputs, const flo
     int posh_origin = (out_pos / param.out_w) * param.Sh - param.Ph;
     int posw_origin = (out_pos % param.out_w) * param.Sw - param.Pw;
     const float *input_channel = inputs + blockIdx.z * param.inBatchNumel + blockIdx.y * param.inHW;
-    float accumulator = bias[blockIdx.y];
+
+    float accumulator;
+    if constexpr(UseBias)
+    {
+        accumulator = bias[blockIdx.y];
+    }
+    else
+    {
+        accumulator = 0.0f;
+    }
 
     for(int tap_base = 0; tap_base < kernel_elements; tap_base += 4)
     {
@@ -208,7 +202,7 @@ __global__ void conv2d_1x128x256_groups_k7_kernel(const float *inputs, const flo
                 tap < kernel_elements && input_h >= 0 && input_w >= 0 && input_h < param.in_h && input_w < param.in_w;
             int input_offset = input_h * param.in_w + input_w;
             ptx::ldg_nc_0(input_values[index], input_channel + input_offset, valid);
-            weight_values[index] = tap < kernel_elements ? shared_weights[tap] : 0.0f;
+            weight_values[index] = tap < kernel_elements ? smemweight[tap] : 0.0f;
         }
 #pragma unroll
         for(int index = 0; index < 4; ++index)
@@ -224,22 +218,24 @@ __global__ void conv2d_1x128x256_groups_k7_kernel(const float *inputs, const flo
     }
 }
 
-static void launch_k7_single_channel(void *inputs, void *weights, void *bias, void *outputs, Conv2DParam param, int n,
-                                     cudaStream_t stream)
+template <bool UseBias>
+void launch_dwconv_opt_fp32_k7_single_channel(float *inputs, float *weights, float *bias, float *outputs,
+                                              const Conv2DParam &param, int n, cudaStream_t stream)
 {
     dim3 block(256);
     dim3 grid((param.outHW + 255) / 256, param.out_ch, n);
-    conv2d_1x128x256_groups_k7_kernel<<<grid, block, 0, stream>>>(
-        static_cast<const float *>(inputs), static_cast<const float *>(weights), static_cast<const float *>(bias),
-        static_cast<float *>(outputs), param);
+
+    dwconv_opt_fp32_k7_single_channel_kernel<UseBias>
+        <<<grid, block, 0, stream>>>(inputs, weights, bias, outputs, param);
 }
 
-__global__ void conv2d_4x16x16_shared_input_kernel(const float *inputs, const float *weights, const float *bias,
-                                                   float *outputs, Conv2DParam param)
+template <bool UseBias>
+__global__ void dwconv_opt_fp32_shared_input_kernel(const float *inputs, const float *weights, const float *bias,
+                                                    float *outputs, Conv2DParam param)
 {
-    extern __shared__ __align__(16) float shared[];
-    float *shared_weights = shared;
-    float *shared_inputs = shared_weights + kSharedWeightElements;
+    extern __shared__ __align__(16) float smem[];
+    float *smemweight = smem;
+    float *smeminput = smemweight + kSharedWeightElements;
 
     int input_tile_h = (kSharedTileH - 1) * param.Sh + kSharedKernelSize;
     int input_tile_w = (kSharedTileW - 1) * param.Sw + kSharedKernelSize;
@@ -263,7 +259,7 @@ __global__ void conv2d_4x16x16_shared_input_kernel(const float *inputs, const fl
             value = weights[blockIdx.y * kSharedChannelGroup * kSharedKernelElements + channel * kSharedKernelElements +
                             tap];
         }
-        shared_weights[tap * kSharedChannelGroup + channel] = value;
+        smemweight[tap * kSharedChannelGroup + channel] = value;
     }
 
     const float *input_group = inputs + blockIdx.z * param.inBatchNumel + blockIdx.y * kSharedChannelGroup * param.inHW;
@@ -274,17 +270,20 @@ __global__ void conv2d_4x16x16_shared_input_kernel(const float *inputs, const fl
         int input_h = input_h_origin + tile_input_h;
         int input_w = input_w_origin + tile_input_w;
         bool valid = input_h >= 0 && input_w >= 0 && input_h < param.in_h && input_w < param.in_w;
+
         int input_offset = input_h * param.in_w + input_w;
         float input_values[kSharedChannelGroup];
+
 #pragma unroll
         for(int channel = 0; channel < kSharedChannelGroup; ++channel)
         {
             const float *input_address = input_group + channel * param.inHW + input_offset;
             ptx::ldg_nc_0(input_values[channel], input_address, valid);
         }
+
         int shared_input_x = swizzle_shared_input_x(tile_input_w);
         int shared_input_offset = tile_input_h * shared_input_stride + shared_input_x;
-        uint32_t shared_input_address = ptx::smem_u32addr(shared_inputs + shared_input_offset * kSharedChannelGroup);
+        uint32_t shared_input_address = ptx::smem_u32addr(smeminput + shared_input_offset * kSharedChannelGroup);
         ptx::sts128(input_values[0], input_values[1], input_values[2], input_values[3], shared_input_address);
     }
     __syncthreads();
@@ -301,7 +300,16 @@ __global__ void conv2d_4x16x16_shared_input_kernel(const float *inputs, const fl
     float accumulators[kSharedChannelGroup];
 #pragma unroll
     for(int channel = 0; channel < kSharedChannelGroup; ++channel)
-        accumulators[channel] = bias[blockIdx.y * kSharedChannelGroup + channel];
+    {
+        if constexpr(UseBias)
+        {
+            accumulators[channel] = bias[blockIdx.y * kSharedChannelGroup + channel];
+        }
+        else
+        {
+            accumulators[channel] = 0.0f;
+        }
+    }
 
     for(int kernel_h = 0; kernel_h < kSharedKernelSize; ++kernel_h)
     {
@@ -311,11 +319,13 @@ __global__ void conv2d_4x16x16_shared_input_kernel(const float *inputs, const fl
             int shared_input_w = local_output_w * param.Sw + kernel_w;
             int shared_input_x = swizzle_shared_input_x(shared_input_w);
             int input_offset = shared_input_h * shared_input_stride + shared_input_x;
+
             int tap = kernel_h * kSharedKernelSize + kernel_w;
             float input_values[kSharedChannelGroup];
             float weight_values[kSharedChannelGroup];
-            uint32_t input_address = ptx::smem_u32addr(shared_inputs + input_offset * kSharedChannelGroup);
-            uint32_t weight_address = ptx::smem_u32addr(shared_weights + tap * kSharedChannelGroup);
+
+            uint32_t input_address = ptx::smem_u32addr(smeminput + input_offset * kSharedChannelGroup);
+            uint32_t weight_address = ptx::smem_u32addr(smemweight + tap * kSharedChannelGroup);
             ptx::lds128(input_values[0], input_values[1], input_values[2], input_values[3], input_address);
             ptx::lds128(weight_values[0], weight_values[1], weight_values[2], weight_values[3], weight_address);
 #pragma unroll
@@ -336,7 +346,7 @@ __global__ void conv2d_4x16x16_shared_input_kernel(const float *inputs, const fl
     }
 }
 
-static size_t shared_input_bytes(const Conv2DParam &param)
+size_t shared_input_bytes(const Conv2DParam &param)
 {
     int input_tile_h = (kSharedTileH - 1) * param.Sh + param.Kh;
     int input_tile_w = (kSharedTileW - 1) * param.Sw + param.Kw;
@@ -345,41 +355,42 @@ static size_t shared_input_bytes(const Conv2DParam &param)
     return (kSharedWeightElements + input_elements) * sizeof(float);
 }
 
-static bool supports_shared_input(const Conv2DParam &param)
+bool supports_shared_input(const Conv2DParam &param)
 {
     constexpr size_t maximum_shared_bytes = 48 * 1024;
     return param.out_ch % kSharedChannelGroup == 0 && param.Kh == 11 && param.Kw == 11 &&
            param.KhKw <= kSharedWeightStride && shared_input_bytes(param) <= maximum_shared_bytes;
 }
 
-static void launch_target(void *inputs, void *weights, void *bias, void *outputs, Conv2DParam param, int n,
-                          cudaStream_t stream)
+template <bool UseBias>
+void launch_dwconv_opt_fp32_dispatch(float *inputs, float *weights, float *bias, float *outputs,
+                                     const Conv2DParam &param, int n, cudaStream_t stream)
 {
     if(!supports_shared_input(param))
     {
         if(param.Kh == 3 && param.Kw == 3)
         {
-            launch_specialized<3>(inputs, weights, bias, outputs, param, n, stream);
+            launch_dwconv_opt_fp32_impl<3, UseBias>(inputs, weights, bias, outputs, param, n, stream);
         }
         else if(param.Kh == 5 && param.Kw == 5)
         {
-            launch_specialized<5>(inputs, weights, bias, outputs, param, n, stream);
+            launch_dwconv_opt_fp32_impl<5, UseBias>(inputs, weights, bias, outputs, param, n, stream);
         }
         else if(param.Kh == 7 && param.Kw == 7)
         {
             size_t grouped_blocks = static_cast<size_t>((param.outHW + 255) / 256) * (param.out_ch / 4) * n;
             if(grouped_blocks < 104)
             {
-                launch_k7_single_channel(inputs, weights, bias, outputs, param, n, stream);
+                launch_dwconv_opt_fp32_k7_single_channel<UseBias>(inputs, weights, bias, outputs, param, n, stream);
             }
             else
             {
-                launch_specialized<7>(inputs, weights, bias, outputs, param, n, stream);
+                launch_dwconv_opt_fp32_impl<7, UseBias>(inputs, weights, bias, outputs, param, n, stream);
             }
         }
         else
         {
-            launch_custom(inputs, weights, bias, outputs, param, n, stream);
+            launch_dwconv_opt_fp32_impl<0, UseBias>(inputs, weights, bias, outputs, param, n, stream);
         }
         return;
     }
@@ -388,15 +399,25 @@ static void launch_target(void *inputs, void *weights, void *bias, void *outputs
     int tiles_w = (param.out_w + kSharedTileW - 1) / kSharedTileW;
     dim3 block(kSharedBlockSize);
     dim3 grid(tiles_h * tiles_w, param.out_ch / kSharedChannelGroup, n);
-    conv2d_4x16x16_shared_input_kernel<<<grid, block, shared_input_bytes(param), stream>>>(
-        static_cast<const float *>(inputs), static_cast<const float *>(weights), static_cast<const float *>(bias),
-        static_cast<float *>(outputs), param);
+
+    dwconv_opt_fp32_shared_input_kernel<UseBias>
+        <<<grid, block, shared_input_bytes(param), stream>>>(inputs, weights, bias, outputs, param);
 }
 
 } // namespace
 
-void launch_opt_fp32(float *inputs, float *weights, float *bias, float *outputs, Conv2DParam param, int n,
-                     cudaStream_t stream)
+void launch_dwconv_opt_fp32(float *inputs, float *weights, float *bias, float *outputs, const Conv2DParam &param, int n,
+                            cudaStream_t stream)
 {
-    launch_target(inputs, weights, bias, outputs, param, n, stream);
+    if(param.use_bias && bias == nullptr)
+        throw std::invalid_argument("DWConv opt FP32 启用 bias 时指针不能为空");
+
+    if(param.use_bias)
+    {
+        launch_dwconv_opt_fp32_dispatch<true>(inputs, weights, bias, outputs, param, n, stream);
+    }
+    else
+    {
+        launch_dwconv_opt_fp32_dispatch<false>(inputs, weights, bias, outputs, param, n, stream);
+    }
 }

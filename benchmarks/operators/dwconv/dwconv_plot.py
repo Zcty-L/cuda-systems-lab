@@ -32,10 +32,11 @@ def configure_font(font_file):
 
 
 def device_label(csv_path):
-    """从 comparison.csv 同目录的设备查询记录读取图标题。"""
-    device_file = csv_path.with_name('device.txt')
-    if not device_file.exists():
-        raise RuntimeError(f'缺少设备记录：{device_file}')
+    """读取精度目录或其上层共享的设备查询记录。"""
+    candidates = [csv_path.with_name('device.txt'), csv_path.parent.parent / 'device.txt']
+    device_file = next((path for path in candidates if path.is_file()), None)
+    if device_file is None:
+        raise RuntimeError(f'缺少设备记录：{candidates}')
     for line in device_file.read_text().splitlines():
         if line.strip().startswith('Name '):
             return line.split('Name', 1)[1].strip().removeprefix('NVIDIA GeForce ').removesuffix(' GPU')
@@ -46,6 +47,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--csv', type=Path, required=True)
     parser.add_argument('--dtype', choices=['fp32', 'fp16'], required=True)
+    parser.add_argument('--layout', choices=['nchw', 'nhwc'], default='nchw')
     parser.add_argument('--k', type=int, default=11)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--font-file', type=Path, help='Times New Roman 字体文件路径')
@@ -54,7 +56,8 @@ def main():
     with args.csv.open() as file:
         # 全量脚本的前 23 项为快速用例，排除它们以免重复 shape。
         rows = [r for r in csv.DictReader(file)
-                if int(r['case']) >= 23 and int(r['kh']) == args.k and int(r['kw']) == args.k]
+                if int(r['case']) >= 23 and int(r['kh']) == args.k and int(r['kw']) == args.k
+                and r.get('dtype', args.dtype) == args.dtype and r.get('layout', 'nchw') == args.layout]
     if not rows:
         parser.error('没有匹配的规则网格数据')
     channels = sorted({int(r['c']) for r in rows})
@@ -100,10 +103,10 @@ def main():
     if any(r['exceeds_physical_vram'] == '1' for r in rows):
         handles.append(Line2D([], [], color='black', marker='x', linestyle='None'))
         labels.append('Input + output > physical VRAM')
-    fig.suptitle(f'Depthwise Conv {args.dtype.upper()} | K={args.k}x{args.k} | NCHW | {device_label(args.csv)}', fontsize=18, y=0.99)
+    fig.suptitle(f'Depthwise Conv {args.dtype.upper()} | K={args.k}x{args.k} | {args.layout.upper()} | {device_label(args.csv)}', fontsize=18, y=0.99)
     fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.96), ncol=len(handles), frameon=False)
     fig.text(0.5, 0.012, 'FLOPs = 2 x N x C x Hout x Wout x K x K (bias excluded); kernel time includes bias. '
-             '20 warmup / 100 iterations; single sweep.', ha='center', fontsize=10, color='#555555')
+             'Timing configuration: see accompanying benchmark metadata.', ha='center', fontsize=10, color='#555555')
     fig.subplots_adjust(left=0.045, right=0.99, bottom=0.09, top=0.87, hspace=0.38, wspace=0.12)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output, dpi=150, facecolor='white')

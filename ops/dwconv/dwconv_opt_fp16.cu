@@ -1,14 +1,28 @@
-#include "dwconv_opt.cuh"
+#include <stdexcept>
+#include <type_traits>
 #include <cuda_lab/ptx_utils.cuh>
+#include "dwconv_opt.cuh"
 
 namespace
 {
-// FP16 存储，两个通道独立使用 FP32 FMA 累加。
-__device__ __forceinline__ float2 accumulate_fp32(__half2 weight, __half2 input, float2 sum)
+
+template <bool AccumulateFP32> using Accumulator = std::conditional_t<AccumulateFP32, float2, __half2>;
+
+// FP16 存储，按模板参数选择两个通道的 FP32 FMA 或 half2 FMA。
+template <bool AccumulateFP32 = true>
+__device__ __forceinline__ Accumulator<AccumulateFP32> accumulate_fp16(__half2 weight, __half2 input,
+                                                                       Accumulator<AccumulateFP32> sum)
 {
-    float2 w = __half22float2(weight);
-    float2 x = __half22float2(input);
-    return make_float2(fmaf(w.x, x.x, sum.x), fmaf(w.y, x.y, sum.y));
+    if constexpr(AccumulateFP32)
+    {
+        float2 w = __half22float2(weight);
+        float2 x = __half22float2(input);
+        return make_float2(fmaf(w.x, x.x, sum.x), fmaf(w.y, x.y, sum.y));
+    }
+    else
+    {
+        return __hfma2(weight, input, sum);
+    }
 }
 
 constexpr int kKernelCapacity = 128;
@@ -18,9 +32,10 @@ constexpr int kSharedBlockSize = kSharedTileH * kSharedTileW;
 constexpr int kSharedChannelPairs = 4;
 constexpr int kSharedWeightStride = 128;
 constexpr int kSharedWeightElements = kSharedChannelPairs * kSharedWeightStride;
-template <int KernelSize>
-__global__ void conv2d_4x128x256_fp16_groups_kernel(const __half *inputs, const __half2 *packed_weights,
-                                                    const __half *bias, __half *outputs, Conv2DParam param)
+
+template <int KernelSize, bool UseBias, bool AccumulateFP32 = true>
+__global__ void dwconv_opt_fp16_groups_kernel(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                              __half *outputs, Conv2DParam param)
 {
     constexpr bool specialized = KernelSize > 0;
     constexpr int specialized_elements = KernelSize * KernelSize;
@@ -28,7 +43,7 @@ __global__ void conv2d_4x128x256_fp16_groups_kernel(const __half *inputs, const 
     constexpr int shared_capacity = specialized ? specialized_capacity : kKernelCapacity;
     int kernel_width = specialized ? KernelSize : param.Kw;
     int kernel_elements = specialized ? specialized_elements : param.KhKw;
-    __shared__ __half2 smem_weights[4 * shared_capacity];
+    __shared__ __align__(16) __half2 smem_weights[4 * shared_capacity];
 
     int tid = threadIdx.x;
     int out_pos = blockIdx.x * blockDim.x + tid;
@@ -50,13 +65,26 @@ __global__ void conv2d_4x128x256_fp16_groups_kernel(const __half *inputs, const 
     __syncthreads();
 
     const __half *input_ptr = inputs + blockIdx.z * param.inBatchNumel + blockIdx.y * 8 * param.inHW;
-    float2 output_frag[4];
+    Accumulator<AccumulateFP32> output_frag[4];
 
 #pragma unroll
     for(int channel_pair = 0; channel_pair < 4; ++channel_pair)
     {
-        int channel = blockIdx.y * 8 + channel_pair * 2;
-        output_frag[channel_pair] = make_float2(__half2float(bias[channel]), __half2float(bias[channel + 1]));
+        if constexpr(UseBias)
+        {
+            int channel = blockIdx.y * 8 + channel_pair * 2;
+            if constexpr(AccumulateFP32)
+                output_frag[channel_pair] = make_float2(__half2float(bias[channel]), __half2float(bias[channel + 1]));
+            else
+                output_frag[channel_pair] = __halves2half2(bias[channel], bias[channel + 1]);
+        }
+        else
+        {
+            if constexpr(AccumulateFP32)
+                output_frag[channel_pair] = make_float2(0.0f, 0.0f);
+            else
+                output_frag[channel_pair] = __float2half2_rn(0.0f);
+        }
     }
 
     for(int k = 0; k < kernel_elements; k += 4)
@@ -96,7 +124,7 @@ __global__ void conv2d_4x128x256_fp16_groups_kernel(const __half *inputs, const 
             {
                 __half2 weight = smem_weights[channel_pair * shared_capacity + k + i];
                 output_frag[channel_pair] =
-                    accumulate_fp32(weight, input_frag[channel_pair][i], output_frag[channel_pair]);
+                    accumulate_fp16<AccumulateFP32>(weight, input_frag[channel_pair][i], output_frag[channel_pair]);
             }
         }
     }
@@ -107,33 +135,43 @@ __global__ void conv2d_4x128x256_fp16_groups_kernel(const __half *inputs, const 
 #pragma unroll
         for(int channel_pair = 0; channel_pair < 4; ++channel_pair)
         {
-            outputs[out_offset + channel_pair * 2 * param.outHW] = __float2half_rn(output_frag[channel_pair].x);
-            outputs[out_offset + (channel_pair * 2 + 1) * param.outHW] = __float2half_rn(output_frag[channel_pair].y);
+            if constexpr(AccumulateFP32)
+            {
+                outputs[out_offset + channel_pair * 2 * param.outHW] = __float2half_rn(output_frag[channel_pair].x);
+                outputs[out_offset + (channel_pair * 2 + 1) * param.outHW] =
+                    __float2half_rn(output_frag[channel_pair].y);
+            }
+            else
+            {
+                outputs[out_offset + channel_pair * 2 * param.outHW] = __low2half(output_frag[channel_pair]);
+                outputs[out_offset + (channel_pair * 2 + 1) * param.outHW] = __high2half(output_frag[channel_pair]);
+            }
         }
     }
 }
 
-template <int KernelSize>
-static void launch_specialized(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
-                               const Conv2DParam &param, int n)
+template <int KernelSize, bool UseBias, bool AccumulateFP32>
+static void launch_dwconv_opt_fp16_specialized(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                               __half *outputs, const Conv2DParam &param, int n, cudaStream_t stream)
 {
     dim3 block(256);
     dim3 grid((param.outHW + block.x - 1) / block.x, param.out_ch / 8, n);
-    conv2d_4x128x256_fp16_groups_kernel<KernelSize><<<grid, block>>>(inputs, packed_weights, bias, outputs, param);
+    dwconv_opt_fp16_groups_kernel<KernelSize, UseBias, AccumulateFP32>
+        <<<grid, block, 0, stream>>>(inputs, packed_weights, bias, outputs, param);
 }
 
-template <int KernelSize>
-__global__ void conv2d_1x128x256_fp16_groups_kernel(const __half *inputs, const __half2 *packed_weights,
-                                                    const __half *bias, __half *outputs, Conv2DParam param)
+template <int KernelSize, bool UseBias, bool AccumulateFP32 = true>
+__global__ void dwconv_opt_fp16_pair_kernel(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                            __half *outputs, Conv2DParam param)
 {
     constexpr int kernel_elements = KernelSize * KernelSize;
     constexpr int shared_capacity = (kernel_elements + 3) / 4 * 4;
-    __shared__ __half2 shared_weights[shared_capacity];
+    __shared__ __align__(16) __half2 smem_weights[shared_capacity];
 
     int tid = threadIdx.x;
     if(tid < shared_capacity)
     {
-        shared_weights[tid] =
+        smem_weights[tid] =
             tid < kernel_elements ? packed_weights[blockIdx.y * kernel_elements + tid] : __float2half2_rn(0.0f);
     }
     __syncthreads();
@@ -142,8 +180,22 @@ __global__ void conv2d_1x128x256_fp16_groups_kernel(const __half *inputs, const 
     int posh_origin = (out_pos / param.out_w) * param.Sh - param.Ph;
     int posw_origin = (out_pos % param.out_w) * param.Sw - param.Pw;
     const __half *input_pair = inputs + blockIdx.z * param.inBatchNumel + blockIdx.y * 2 * param.inHW;
-    int channel = blockIdx.y * 2;
-    float2 output_value = make_float2(__half2float(bias[channel]), __half2float(bias[channel + 1]));
+    Accumulator<AccumulateFP32> output_value;
+    if constexpr(UseBias)
+    {
+        int channel = blockIdx.y * 2;
+        if constexpr(AccumulateFP32)
+            output_value = make_float2(__half2float(bias[channel]), __half2float(bias[channel + 1]));
+        else
+            output_value = __halves2half2(bias[channel], bias[channel + 1]);
+    }
+    else
+    {
+        if constexpr(AccumulateFP32)
+            output_value = make_float2(0.0f, 0.0f);
+        else
+            output_value = __float2half2_rn(0.0f);
+    }
 
     for(int tap_base = 0; tap_base < kernel_elements; tap_base += 4)
     {
@@ -170,25 +222,35 @@ __global__ void conv2d_1x128x256_fp16_groups_kernel(const __half *inputs, const 
 #pragma unroll
         for(int index = 0; index < 4; ++index)
         {
-            output_value = accumulate_fp32(shared_weights[tap_base + index], input_values[index], output_value);
+            output_value =
+                accumulate_fp16<AccumulateFP32>(smem_weights[tap_base + index], input_values[index], output_value);
         }
     }
 
     if(out_pos < param.outHW)
     {
         int output_offset = blockIdx.z * param.outBatchNumel + blockIdx.y * 2 * param.outHW + out_pos;
-        outputs[output_offset] = __float2half_rn(output_value.x);
-        outputs[output_offset + param.outHW] = __float2half_rn(output_value.y);
+        if constexpr(AccumulateFP32)
+        {
+            outputs[output_offset] = __float2half_rn(output_value.x);
+            outputs[output_offset + param.outHW] = __float2half_rn(output_value.y);
+        }
+        else
+        {
+            outputs[output_offset] = __low2half(output_value);
+            outputs[output_offset + param.outHW] = __high2half(output_value);
+        }
     }
 }
 
-template <int KernelSize>
-static void launch_pair(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
-                        const Conv2DParam &param, int n)
+template <int KernelSize, bool UseBias, bool AccumulateFP32>
+static void launch_dwconv_opt_fp16_pair(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                        __half *outputs, const Conv2DParam &param, int n, cudaStream_t stream)
 {
     dim3 block(256);
     dim3 grid((param.outHW + block.x - 1) / block.x, param.out_ch / 2, n);
-    conv2d_1x128x256_fp16_groups_kernel<KernelSize><<<grid, block>>>(inputs, packed_weights, bias, outputs, param);
+    dwconv_opt_fp16_pair_kernel<KernelSize, UseBias, AccumulateFP32>
+        <<<grid, block, 0, stream>>>(inputs, packed_weights, bias, outputs, param);
 }
 
 __device__ __forceinline__ int swizzle_shared_input_x(int input_x)
@@ -196,14 +258,14 @@ __device__ __forceinline__ int swizzle_shared_input_x(int input_x)
     return input_x ^ ((input_x >> 3) & 1);
 }
 
-template <int KernelSize>
-__global__ void conv2d_8x16x16_fp16_shared_input_kernel(const __half *inputs, const __half2 *packed_weights,
-                                                        const __half *bias, __half *outputs, Conv2DParam param)
+template <int KernelSize, bool UseBias, bool AccumulateFP32 = true>
+__global__ void dwconv_opt_fp16_shared_input_kernel(const __half *inputs, const __half2 *packed_weights,
+                                                    const __half *bias, __half *outputs, Conv2DParam param)
 {
     constexpr int kernel_elements = KernelSize * KernelSize;
-    extern __shared__ __align__(16) __half2 shared[];
-    __half2 *shared_weights = shared;
-    __half2 *shared_inputs = shared_weights + kSharedWeightElements;
+    extern __shared__ __align__(16) __half2 smem[];
+    __half2 *smem_weights = smem;
+    __half2 *smem_inputs = smem_weights + kSharedWeightElements;
 
     int input_tile_h = (kSharedTileH - 1) * param.Sh + KernelSize;
     int input_tile_w = (kSharedTileW - 1) * param.Sw + KernelSize;
@@ -227,7 +289,7 @@ __global__ void conv2d_8x16x16_fp16_shared_input_kernel(const __half *inputs, co
             value = packed_weights[blockIdx.y * kSharedChannelPairs * kernel_elements + channel_pair * kernel_elements +
                                    tap];
         }
-        shared_weights[index] = value;
+        smem_weights[index] = value;
     }
 
     const __half *input_group = inputs + blockIdx.z * param.inBatchNumel + blockIdx.y * 8 * param.inHW;
@@ -255,7 +317,7 @@ __global__ void conv2d_8x16x16_fp16_shared_input_kernel(const __half *inputs, co
         }
         int shared_input_x = swizzle_shared_input_x(tile_input_w);
         int shared_input_offset = tile_input_h * shared_input_stride + shared_input_x;
-        uint32_t shared_input_address = ptx::smem_u32addr(shared_inputs + shared_input_offset * kSharedChannelPairs);
+        uint32_t shared_input_address = ptx::smem_u32addr(smem_inputs + shared_input_offset * kSharedChannelPairs);
         ptx::sts128(input_values[0], input_values[1], input_values[2], input_values[3], shared_input_address);
     }
     __syncthreads();
@@ -269,12 +331,25 @@ __global__ void conv2d_8x16x16_fp16_shared_input_kernel(const __half *inputs, co
         return;
     }
 
-    float2 accumulators[kSharedChannelPairs];
+    Accumulator<AccumulateFP32> accumulators[kSharedChannelPairs];
 #pragma unroll
     for(int channel_pair = 0; channel_pair < kSharedChannelPairs; ++channel_pair)
     {
-        int channel = blockIdx.y * 8 + channel_pair * 2;
-        accumulators[channel_pair] = make_float2(__half2float(bias[channel]), __half2float(bias[channel + 1]));
+        if constexpr(UseBias)
+        {
+            int channel = blockIdx.y * 8 + channel_pair * 2;
+            if constexpr(AccumulateFP32)
+                accumulators[channel_pair] = make_float2(__half2float(bias[channel]), __half2float(bias[channel + 1]));
+            else
+                accumulators[channel_pair] = __halves2half2(bias[channel], bias[channel + 1]);
+        }
+        else
+        {
+            if constexpr(AccumulateFP32)
+                accumulators[channel_pair] = make_float2(0.0f, 0.0f);
+            else
+                accumulators[channel_pair] = __float2half2_rn(0.0f);
+        }
     }
     for(int kernel_h = 0; kernel_h < KernelSize; ++kernel_h)
     {
@@ -287,15 +362,15 @@ __global__ void conv2d_8x16x16_fp16_shared_input_kernel(const __half *inputs, co
             int tap = kernel_h * KernelSize + kernel_w;
             __half2 input_values[kSharedChannelPairs];
             __half2 weight_values[kSharedChannelPairs];
-            uint32_t input_address = ptx::smem_u32addr(shared_inputs + input_offset * kSharedChannelPairs);
-            uint32_t weight_address = ptx::smem_u32addr(shared_weights + tap * kSharedChannelPairs);
+            uint32_t input_address = ptx::smem_u32addr(smem_inputs + input_offset * kSharedChannelPairs);
+            uint32_t weight_address = ptx::smem_u32addr(smem_weights + tap * kSharedChannelPairs);
             ptx::lds128(input_values[0], input_values[1], input_values[2], input_values[3], input_address);
             ptx::lds128(weight_values[0], weight_values[1], weight_values[2], weight_values[3], weight_address);
 #pragma unroll
             for(int channel_pair = 0; channel_pair < kSharedChannelPairs; ++channel_pair)
             {
-                accumulators[channel_pair] = accumulate_fp32(weight_values[channel_pair], input_values[channel_pair],
-                                                             accumulators[channel_pair]);
+                accumulators[channel_pair] = accumulate_fp16<AccumulateFP32>(
+                    weight_values[channel_pair], input_values[channel_pair], accumulators[channel_pair]);
             }
         }
     }
@@ -305,8 +380,16 @@ __global__ void conv2d_8x16x16_fp16_shared_input_kernel(const __half *inputs, co
 #pragma unroll
     for(int channel_pair = 0; channel_pair < kSharedChannelPairs; ++channel_pair)
     {
-        outputs[output_base + channel_pair * 2 * param.outHW] = __float2half_rn(accumulators[channel_pair].x);
-        outputs[output_base + (channel_pair * 2 + 1) * param.outHW] = __float2half_rn(accumulators[channel_pair].y);
+        if constexpr(AccumulateFP32)
+        {
+            outputs[output_base + channel_pair * 2 * param.outHW] = __float2half_rn(accumulators[channel_pair].x);
+            outputs[output_base + (channel_pair * 2 + 1) * param.outHW] = __float2half_rn(accumulators[channel_pair].y);
+        }
+        else
+        {
+            outputs[output_base + channel_pair * 2 * param.outHW] = __low2half(accumulators[channel_pair]);
+            outputs[output_base + (channel_pair * 2 + 1) * param.outHW] = __high2half(accumulators[channel_pair]);
+        }
     }
 }
 
@@ -326,66 +409,100 @@ static bool supports_shared_input(const Conv2DParam &param)
            shared_input_bytes(param) <= maximum_shared_bytes;
 }
 
-template <int KernelSize>
-static void launch_shared_input(const __half *inputs, const __half2 *packed_weights, const __half *bias,
-                                __half *outputs, const Conv2DParam &param, int n)
+template <int KernelSize, bool UseBias, bool AccumulateFP32>
+static void launch_dwconv_opt_fp16_shared_input(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                                __half *outputs, const Conv2DParam &param, int n, cudaStream_t stream)
 {
     int tiles_h = (param.out_h + kSharedTileH - 1) / kSharedTileH;
     int tiles_w = (param.out_w + kSharedTileW - 1) / kSharedTileW;
     dim3 block(kSharedBlockSize);
     dim3 grid(tiles_h * tiles_w, param.out_ch / 8, n);
-    conv2d_8x16x16_fp16_shared_input_kernel<KernelSize>
-        <<<grid, block, shared_input_bytes(param)>>>(inputs, packed_weights, bias, outputs, param);
+    dwconv_opt_fp16_shared_input_kernel<KernelSize, UseBias, AccumulateFP32>
+        <<<grid, block, shared_input_bytes(param), stream>>>(inputs, packed_weights, bias, outputs, param);
 }
 
-static void launch_baseline(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
-                            const Conv2DParam &param, int n)
+template <bool UseBias, bool AccumulateFP32>
+static void launch_dwconv_opt_fp16_dispatch(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                            __half *outputs, const Conv2DParam &param, int n, cudaStream_t stream)
 {
     if(param.Kh == 3 && param.Kw == 3)
     {
-        launch_pair<3>(inputs, packed_weights, bias, outputs, param, n);
+        launch_dwconv_opt_fp16_pair<3, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n,
+                                                                stream);
     }
     else if(param.Kh == 5 && param.Kw == 5)
     {
-        launch_pair<5>(inputs, packed_weights, bias, outputs, param, n);
+        launch_dwconv_opt_fp16_pair<5, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n,
+                                                                stream);
     }
     else if(param.Kh == 7 && param.Kw == 7)
     {
-        launch_pair<7>(inputs, packed_weights, bias, outputs, param, n);
+        launch_dwconv_opt_fp16_pair<7, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n,
+                                                                stream);
     }
     else if(param.Kh == 9 && param.Kw == 9)
     {
         size_t pair_blocks = static_cast<size_t>((param.outHW + 255) / 256) * (param.out_ch / 2) * n;
         if(pair_blocks >= 140 && supports_shared_input(param))
         {
-            launch_shared_input<9>(inputs, packed_weights, bias, outputs, param, n);
+            launch_dwconv_opt_fp16_shared_input<9, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs,
+                                                                            param, n, stream);
         }
         else
         {
-            launch_pair<9>(inputs, packed_weights, bias, outputs, param, n);
+            launch_dwconv_opt_fp16_pair<9, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n,
+                                                                    stream);
         }
     }
     else if(param.Kh == 11 && param.Kw == 11)
     {
         if(supports_shared_input(param))
         {
-            launch_shared_input<11>(inputs, packed_weights, bias, outputs, param, n);
+            launch_dwconv_opt_fp16_shared_input<11, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs,
+                                                                             param, n, stream);
         }
         else
         {
-            launch_specialized<11>(inputs, packed_weights, bias, outputs, param, n);
+            launch_dwconv_opt_fp16_specialized<11, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs,
+                                                                            param, n, stream);
         }
     }
     else
     {
-        launch_specialized<0>(inputs, packed_weights, bias, outputs, param, n);
+        launch_dwconv_opt_fp16_specialized<0, UseBias, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n,
+                                                                       stream);
+    }
+}
+
+template <bool AccumulateFP32>
+void launch_dwconv_opt_fp16_impl(const __half *inputs, const __half2 *packed_weights, const __half *bias,
+                                 __half *outputs, const Conv2DParam &param, int n, cudaStream_t stream)
+{
+    if(param.use_bias)
+    {
+        launch_dwconv_opt_fp16_dispatch<true, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n, stream);
+    }
+    else
+    {
+        launch_dwconv_opt_fp16_dispatch<false, AccumulateFP32>(inputs, packed_weights, bias, outputs, param, n, stream);
     }
 }
 
 } // namespace
 
-void launch_opt_fp16(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
-                     const Conv2DParam &param, int n)
+void launch_dwconv_opt_fp16(const __half *inputs, const __half2 *packed_weights, const __half *bias, __half *outputs,
+                            const Conv2DParam &param, int n, cudaStream_t stream /* = nullptr */,
+                            bool accumulate_fp32 /* = true */)
 {
-    launch_baseline(inputs, packed_weights, bias, outputs, param, n);
+    if(param.use_bias && bias == nullptr)
+        throw std::invalid_argument("DWConv opt FP16 启用 bias 时指针不能为空");
+
+    if(accumulate_fp32)
+    {
+        launch_dwconv_opt_fp16_impl<true>(inputs, packed_weights, bias, outputs, param, n, stream);
+    }
+    else
+    {
+        launch_dwconv_opt_fp16_impl<false>(inputs, packed_weights, bias, outputs, param, n, stream);
+    }
 }

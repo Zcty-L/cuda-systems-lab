@@ -26,7 +26,9 @@ cmake --build --preset native --parallel 4
 ctest --preset native
 ```
 
-存储微基准随 `CUDA_LAB_BUILD_BENCHMARKS` 启用，不依赖算子选择。DWConv 的 cuDNN 对比仅在选择 `dwconv` 时查找依赖，缺少 cuDNN 会跳过该后端；可通过 `DWCONV_TEST_CUDNN=OFF` 关闭。Softmax cluster 的架构限制沿用模块配置，见[Cluster 对照](../../operators/softmax/cluster.md)。当前 Python 接口仅提供 Vector Add，启用 Python 时 `CUDA_LAB_OPS` 必须包含 `vector_add`。
+存储微基准随 `CUDA_LAB_BUILD_BENCHMARKS` 启用，不依赖算子选择。DWConv 的 cuDNN 和 TensorRT 对比仅在选择 `dwconv` 时查找依赖，缺少开发库会跳过对应后端；可通过 `DWCONV_ENABLE_CUDNN=OFF`、`DWCONV_ENABLE_TENSORRT=OFF` 分别关闭。Softmax cluster 的架构限制沿用模块配置，见[Cluster 对照](../../operators/softmax/cluster.md)。当前 Python 接口仅提供 Vector Add，启用 Python 时 `CUDA_LAB_OPS` 必须包含 `vector_add`。
+
+DWConv 当前只保留基准入口：单 shape 使用 `build/benchmarks/operators/dwconv/dwconv_compare_bench`，批量结果由同目录的 `dwconv_full_bench.py` 组织，`--check-cpu` 在计时前校验，见[模块说明](../../../benchmarks/operators/dwconv/README.md)。不再构建 DWConv 原生测试，后续 Python 绑定完成后再添加接口测试；基准支持 `BUILD_TESTING=OFF`。旧 `DWCONV_TEST_CUDNN`、`DWCONV_TEST_TENSORRT` 仅在新开关未设置时用于初始化，已有构建配置可以迁移。
 
 | 选项 | 默认值 | 用途 |
 | --- | --- | --- |

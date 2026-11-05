@@ -1,8 +1,15 @@
-foreach(benchmark IN ITEMS dwconv_bench dwconv_fp16_bench dwconv_weights_bench dwconv_opt_bench)
-    add_executable(${benchmark} ${benchmark}.cu)
-    target_link_libraries(${benchmark} PRIVATE cuda_lab::dwconv)
-endforeach()
-
-add_executable(dwconv_bias_bench dwconv_bias_bench.cu)
-target_include_directories(dwconv_bias_bench PRIVATE ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(dwconv_bias_bench PRIVATE CUDA::cudart)
+# 后端适配、数据准备、CPU 参考和 Event 计时均属于本基准，不另建支持库。
+add_executable(dwconv_compare_bench
+    compare/main.cpp compare/common.cpp compare/baseline_opt.cpp compare/torch.cpp)
+target_include_directories(dwconv_compare_bench PRIVATE ${PROJECT_SOURCE_DIR}/ops)
+target_link_libraries(dwconv_compare_bench PRIVATE cuda_lab::dwconv cuda_lab::dwconv_pytorch)
+if(TARGET cuda_ops_dwconv_cudnn)
+    target_sources(dwconv_compare_bench PRIVATE compare/cudnn.cpp)
+    target_link_libraries(dwconv_compare_bench PRIVATE cuda_lab::dwconv_cudnn)
+    target_compile_definitions(dwconv_compare_bench PRIVATE DWCONV_BENCH_HAS_CUDNN=1)
+endif()
+if(TARGET cuda_ops_dwconv_tensorrt)
+    target_sources(dwconv_compare_bench PRIVATE compare/trt.cpp)
+    target_link_libraries(dwconv_compare_bench PRIVATE cuda_lab::dwconv_tensorrt)
+    target_compile_definitions(dwconv_compare_bench PRIVATE DWCONV_BENCH_HAS_TRT=1)
+endif()
