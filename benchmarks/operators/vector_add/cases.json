@@ -1,0 +1,6 @@
+[
+  {"id": "small", "shape": [256], "seed": 42},
+  {"id": "tail", "shape": [1003], "seed": 42},
+  {"id": "medium", "shape": [1048576], "seed": 42},
+  {"id": "large", "shape": [16777216], "seed": 42}
+]

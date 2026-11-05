@@ -92,9 +92,9 @@
 cmake --build build --target dwconv_test dwconv_bench -j 8
 ./build/tools/device_query
 ctest --test-dir build -R '^dwconv_test$' --output-on-failure
-compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/dwconv_test --kernel prefetch --check-cpu --warmup 0 --iterations 1
-./build/benchmarks/operators/dwconv_bench --large-batch
-ncu --set full --clock-control none ./build/benchmarks/operators/dwconv_bench --profile
+compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/native/dwconv_test --kernel prefetch --check-cpu --warmup 0 --iterations 1
+./build/benchmarks/operators/dwconv/dwconv_bench --large-batch
+ncu --set full --clock-control none ./build/benchmarks/operators/dwconv/dwconv_bench --profile
 ```
 
 另见 [FP16 prefetch 对比](prefetch-fp16.md)。

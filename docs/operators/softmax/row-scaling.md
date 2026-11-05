@@ -42,11 +42,11 @@ waves = 64 / 184 ≈ 0.35
 
 ```bash
 cmake --build build --target softmax_bench --parallel 4
-./build/benchmarks/operators/softmax_bench --rows 4096 --cols 1024
+./build/benchmarks/operators/softmax/softmax_bench --rows 4096 --cols 1024
 
 conda activate py311
-python benchmarks/operators/softmax_roofline.py \
+python benchmarks/operators/softmax/softmax_roofline.py \
     --rows 512 1472 4096 16384 --cols 1024 --output build/softmax-row-scaling
-python benchmarks/operators/softmax_roofline.py \
+python benchmarks/operators/softmax/softmax_roofline.py \
     --rows 512 1472 4096 16384 --cols 1024 --output build/softmax-row-scaling --summarize-only
 ```

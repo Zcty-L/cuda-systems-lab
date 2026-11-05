@@ -19,9 +19,9 @@
 ```bash
 cmake --build build --target dwconv_test device_query -j 8
 conda activate py311
-python benchmarks/operators/dwconv_full_bench.py
+python benchmarks/operators/dwconv/dwconv_full_bench.py
 # 复用已有日志，仅补测 opt
-python benchmarks/operators/dwconv_full_bench.py --include-opt
+python benchmarks/operators/dwconv/dwconv_full_bench.py --include-opt
 ```
 
 结果保存在 `build/dwconv-full-fp32/`：`comparison.csv` 每行一个 shape，横向列出四种实现的原始耗时、相对耗时及容量标记；`aggregates.csv` 保存容量内规则网格按 K 分组的相对耗时中位数；`summary.csv` 每行一个 shape/kernel，包含形状、状态、原始微秒数、相对 cuDNN 耗时及准备/释放毫秒数；`case-<ID>-<kernel>.log` 保存命令和原始输出，`cases.txt` 保存形状列表，`device.txt` 保存设备信息，`config.json` 保存参数及测试二进制 SHA256。每个 shape 完成后刷新 CSV，中断后同配置可续跑；不同二进制或参数须更换输出目录。

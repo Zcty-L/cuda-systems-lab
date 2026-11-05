@@ -4,7 +4,7 @@
 
 ## 本次采样口径
 
-- `benchmarks/operators/softmax_roofline.py` 采样标量 FP32 kernel，采用普通 FP32 峰值。
+- `benchmarks/operators/softmax/softmax_roofline.py` 采样标量 FP32 kernel，采用普通 FP32 峰值。
 - 硬件计数包含 `exp` 展开后的普通浮点指令和归约冗余，与 [Softmax 算法估算](arithmetic-intensity.md) 分开使用；指数执行压力辅助观察 XU 指标。
 - 峰值由 NCU 每周期持续峰值乘采样时钟得到；请求 `--clock-control base`，实际时钟以 CSV 为准。
 - 输出 `fp32_peak_pct`、`dram_byte_peak_pct` 和 Roofline 利用率；`roof_side` 仅表示模型限制侧。
@@ -14,14 +14,14 @@
 普通基准通过 CMake 构建；NCU 采样为独立可选脚本，仅依赖 Python 标准库与已安装的 Nsight Compute，不增加项目配置依赖。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=softmax
 cmake --build build --target softmax_bench --parallel 4
-./build/benchmarks/operators/softmax_bench
+./build/benchmarks/operators/softmax/softmax_bench
 
 conda activate py311
-python benchmarks/operators/softmax_roofline.py --cols 1024 8192 65536 --output build/softmax-roofline
+python benchmarks/operators/softmax/softmax_roofline.py --cols 1024 8192 65536 --output build/softmax-roofline
 # 已有采样时，只重新汇总，不再启动 profiler：
-python benchmarks/operators/softmax_roofline.py --summarize-only --output build/softmax-roofline
+python benchmarks/operators/softmax/softmax_roofline.py --summarize-only --output build/softmax-roofline
 ```
 
 默认配置为 512 行、种子 2026；脚本支持 `--rows` 与 `--cols` 列表的所有组合，用 `softmax_bench --rows R --cols C` 选择单个配置。跳过 20 次预热，只采集下一次 kernel；使用 `--cache-control all` 在重放之间清缓存。输出目录保存完整命令、NCU 原始 CSV、应用日志和 `summary.csv`；512 行保留 `ncu-C.csv` 命名，其他形状使用 `ncu-RxC.csv`。应用日志里的 CUDA event 耗时受 profiler 干扰，**不用于性能结论**；本报告只使用 NCU 的 kernel duration。普通基准是连续调用且未清缓存，两者的耗时不能直接比较。采样工具的具体行为参见 [NCU 计时与缓存控制说明](https://docs.nvidia.com/nsight-compute/ProfilingGuide/#workload-durations)。

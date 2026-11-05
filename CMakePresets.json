@@ -1,0 +1,37 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {"major": 3, "minor": 24, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "native",
+      "displayName": "原生 CUDA 算子、测试与基准",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CUDA_LAB_BUILD_PYTHON": "OFF",
+        "CUDA_LAB_BUILD_BENCHMARKS": "ON",
+        "CUDA_LAB_BUILD_TOOLS": "ON",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "python",
+      "displayName": "CUDA 算子与 PyTorch 接口",
+      "inherits": "native",
+      "binaryDir": "${sourceDir}/build/python-cmake",
+      "cacheVariables": {
+        "CUDA_LAB_BUILD_PYTHON": "ON",
+        "CUDA_LAB_BUILD_BENCHMARKS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "native", "configurePreset": "native"},
+    {"name": "python", "configurePreset": "python"}
+  ],
+  "testPresets": [
+    {"name": "native", "configurePreset": "native", "output": {"outputOnFailure": true}},
+    {"name": "python", "configurePreset": "python", "output": {"outputOnFailure": true}}
+  ]
+}

@@ -88,22 +88,22 @@ Cluster 要求 CUDA ≥ 12、SM90+，查询 `cudaDevAttrClusterLaunch` 和 clust
 CTest 2/2 通过；Softmax 共 111 组 FP32、9 组 INT8 精度用例及参数检查。新增覆盖 2/4 blocks、模板切换边界、奇数列、空分段、偏移地址、1/257 行、均匀与极端输入，全部使用非阻塞 stream。FP32 逐元素容差 `1e-6 + 1e-5*abs(reference)`，行和容差 `2e-5`。Memcheck 为 0 errors，racecheck 为 0 errors / 0 warnings；关闭 cluster 构建及默认 SM90 PTX 在本机运行也通过。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120 \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=softmax -DCMAKE_CUDA_ARCHITECTURES=120 \
   -DCUDA_LAB_SOFTMAX_CLUSTER_ARCHITECTURES=120
 cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
-compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/softmax_test
-compute-sanitizer --tool racecheck --error-exitcode 1 ./build/tests/softmax_test
+compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/native/softmax_test
+compute-sanitizer --tool racecheck --error-exitcode 1 ./build/tests/native/softmax_test
 
 # 默认取各实现 5/10/20 waves 行数的并集，附加少行用例。
-./build/benchmarks/operators/softmax_cluster_bench --output build/cluster.csv
+./build/benchmarks/operators/softmax/softmax_cluster_bench --output build/cluster.csv
 # 单形状对照；也可用 --variant cluster2/cluster4/block512/block1024/online。
-./build/benchmarks/operators/softmax_cluster_bench --rows 512 --cols 16384 --output build/cluster-512.csv
+./build/benchmarks/operators/softmax/softmax_cluster_bench --rows 512 --cols 16384 --output build/cluster-512.csv
 
 conda activate py311
-python benchmarks/operators/softmax_roofline.py --rows 512 --cols 16384 \
+python benchmarks/operators/softmax/softmax_roofline.py --rows 512 --cols 16384 \
   --variants online block512 cluster2 cluster4 block1024 --output build/cluster-ncu-16384
-python benchmarks/operators/softmax_roofline.py --rows 512 --cols 32768 \
+python benchmarks/operators/softmax/softmax_roofline.py --rows 512 --cols 32768 \
   --variants online cluster4 block1024 --output build/cluster-ncu-32768
 ```
 

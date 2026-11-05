@@ -1,0 +1,14 @@
+{
+  "binary": "/home/lsbing/CUDA/Codes/cuda-systems-lab/build/tests/dwconv_test",
+  "warmup": 20,
+  "iterations": 100,
+  "dtype": "fp16",
+  "layout": "nchw",
+  "kernels": [
+    "cudnn",
+    "baseline",
+    "pytorch",
+    "opt"
+  ],
+  "binary_sha256": "264c689426a6dd7d58b787124d94856eea4c6d3449aa91688a8e7092621db4d4"
+}

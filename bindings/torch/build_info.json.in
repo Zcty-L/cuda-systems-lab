@@ -1,0 +1,10 @@
+{
+  "version": "@PROJECT_VERSION@",
+  "git_commit": "@CUDA_LAB_GIT_COMMIT@",
+  "git_dirty": @CUDA_LAB_GIT_DIRTY@,
+  "cuda_toolkit": "@CUDAToolkit_VERSION@",
+  "cuda_architectures": "@CMAKE_CUDA_ARCHITECTURES@",
+  "torch_version": "@CUDA_LAB_TORCH_VERSION@",
+  "torch_cuda": "@CUDA_LAB_TORCH_CUDA@",
+  "operators": "@CUDA_LAB_OPS@"
+}

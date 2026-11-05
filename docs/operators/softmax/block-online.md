@@ -24,12 +24,12 @@ Release 构建及 CTest 通过，测试总计 2/2。Softmax 包含 32 组 FP32 �
 - Compute Sanitizer：`memcheck` 为 0 errors，`racecheck` 为 0 errors、0 warnings。
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=softmax
 cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
-compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/softmax_test
-compute-sanitizer --tool racecheck --error-exitcode 1 ./build/tests/softmax_test
-./build/benchmarks/operators/softmax_bench
+compute-sanitizer --tool memcheck --error-exitcode 1 ./build/tests/native/softmax_test
+compute-sanitizer --tool racecheck --error-exitcode 1 ./build/tests/native/softmax_test
+./build/benchmarks/operators/softmax/softmax_bench
 ```
 
 ## 测量配置与结果

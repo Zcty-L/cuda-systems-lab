@@ -1,6 +1,4 @@
-add_library(cuda_ops_softmax STATIC softmax.cu)
-target_include_directories(cuda_ops_softmax PUBLIC ${PROJECT_SOURCE_DIR}/ops/softmax)
-target_link_libraries(cuda_ops_softmax PUBLIC CUDA::cudart)
+cuda_lab_add_operator(softmax SOURCES softmax.cu)
 
 set(softmax_cluster_default ON)
 if(CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 12.0)
@@ -18,7 +16,9 @@ if(CUDA_LAB_ENABLE_SOFTMAX_CLUSTER)
         endif()
     endforeach()
     add_library(cuda_ops_softmax_cluster OBJECT softmax_cluster.cu)
-    set_target_properties(cuda_ops_softmax_cluster PROPERTIES CUDA_ARCHITECTURES "${CUDA_LAB_SOFTMAX_CLUSTER_ARCHITECTURES}")
+    set_target_properties(cuda_ops_softmax_cluster PROPERTIES
+        CUDA_ARCHITECTURES "${CUDA_LAB_SOFTMAX_CLUSTER_ARCHITECTURES}"
+        POSITION_INDEPENDENT_CODE ON)
     target_link_libraries(cuda_ops_softmax_cluster PRIVATE CUDA::cudart)
     target_sources(cuda_ops_softmax PRIVATE $<TARGET_OBJECTS:cuda_ops_softmax_cluster>)
     target_compile_definitions(cuda_ops_softmax PRIVATE CUDA_LAB_ENABLE_SOFTMAX_CLUSTER=1)

@@ -47,10 +47,10 @@ FP16 同样未选出其他 engine；K=7 的两组耗时范围尤其宽，不能�
 ```bash
 cmake --build build --target dwconv_test device_query -j 8
 ./build/tools/device_query
-./build/tests/dwconv_test --kernel cudnn-autotune --dtype all --case 7 --check-cpu
+./build/tests/native/dwconv_test --kernel cudnn-autotune --dtype all --case 7 --check-cpu
 conda activate py311
-python benchmarks/operators/dwconv_autotune_bench.py
-python benchmarks/operators/dwconv_autotune_bench.py --dtype fp16 --output build/dwconv-autotune-fp16
+python benchmarks/operators/dwconv/dwconv_autotune_bench.py
+python benchmarks/operators/dwconv/dwconv_autotune_bench.py --dtype fp16 --output build/dwconv-autotune-fp16
 ```
 
 [汇总对比表](results/2026-10-29-rtx5070ti-laptop-cudnn-autotune/comparison.md)包含配置、三轮耗时中位数与范围、engine 及相对耗时。正式归档仅保留该表；详细日志保留在本地 `build/dwconv-autotune/`（FP32）与 `build/dwconv-autotune-fp16/`（FP16），不纳入正式结果目录。

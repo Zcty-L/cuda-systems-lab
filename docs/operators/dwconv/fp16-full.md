@@ -17,7 +17,7 @@
 ```bash
 cmake --build build --target dwconv_test device_query -j 4
 conda activate py311
-python benchmarks/operators/dwconv_full_bench.py --dtype fp16 --include-opt
+python benchmarks/operators/dwconv/dwconv_full_bench.py --dtype fp16 --include-opt
 ```
 
 结果保存至 `build/dwconv-full-fp16/`：`summary.csv` 每行一个 shape/kernel，记录状态、kernel 微秒数、相对耗时、prepare/post 毫秒数及 cuDNN engine/workspace；`comparison.csv` 每行一个 shape，横向比较四种实现；`aggregates.csv` 按 K 汇总规则网格的相对耗时中位数。原始命令和输出位于 `case-<ID>-<kernel>.log`，配置与二进制 SHA256 位于 `config.json`，另存 `cases.txt` 和 `device.txt`。相同命令支持续跑，FP32 结果保存在独立目录。

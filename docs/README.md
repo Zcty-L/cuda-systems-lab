@@ -41,13 +41,16 @@ docs/
 ### 使用指南
 
 - 公共工具：[设备查询](guides/device-query/usage.md)
+- 构建与安装：[CMake、Python 接口、测试与打包](guides/build/usage.md)
+- 算子开发：[以 Vector Add 为例](guides/operators/development.md)
 
 ### 基准测试
-- 存储微基准：[导入与验证](benchmarks/memory/baseline.md)
 
+- 存储微基准：[导入与验证](benchmarks/memory/baseline.md)
 - 公共方法：[Roofline 指标与判断](benchmarks/methodology/roofline.md)
 
 ### 算子优化
 
-- DWConv：[输入预取范围测量](operators/dwconv/prefetch-benchmark.md)、[FP32 prefetch 与 baseline 对比](operators/dwconv/prefetch-fp32.md)、[FP16 prefetch 测量](operators/dwconv/prefetch-fp16.md)、[权重 shared 与全局缓存](operators/dwconv/weights-cache.md)、[FP32 opt 与 baseline 对比](operators/dwconv/opt-fp32.md)、[cuDNN 融合与布局对比](operators/dwconv/cudnn-fusion.md)、[cuDNN autotune](operators/dwconv/cudnn-autotune.md)、[FP32 全量对比](operators/dwconv/fp32-full.md) · [FP16 全量对比](operators/dwconv/fp16-full.md) · [全量实验数据与图片](operators/dwconv/results/2026-10-13-rtx5070ti-laptop/README.md)
+- Vector Add：[框架与接口验证](operators/vector_add/validation.md)
+- DWConv：[输入预取范围测量](operators/dwconv/prefetch-benchmark.md)、[FP32 prefetch 与 baseline 对比](operators/dwconv/prefetch-fp32.md)、[FP16 prefetch 测量](operators/dwconv/prefetch-fp16.md)、[权重 shared 与全局缓存](operators/dwconv/weights-cache.md)、[FP32 opt 与 baseline 对比](operators/dwconv/opt-fp32.md)、[cuDNN 融合与布局对比](operators/dwconv/cudnn-fusion.md)、[cuDNN autotune](operators/dwconv/cudnn-autotune.md)、[FP32 全量对比（5070 Ti）](operators/dwconv/fp32-full.md) · [FP32 全量对比（RTX 4090）](operators/dwconv/fp32-full-rtx4090.md) · [FP16 全量对比（5070 Ti）](operators/dwconv/fp16-full.md) · [FP16 全量对比（RTX 4090）](operators/dwconv/fp16-full-rtx4090.md) · [5070 Ti 实验数据与图片](operators/dwconv/results/2026-10-13-rtx5070ti-laptop/README.md) · [RTX 4090 实验数据](operators/dwconv/results/2026-10-13-rtx4090/README.md)
 - Softmax：[导入基线](operators/softmax/baseline.md)、[block 与 online 实现](operators/softmax/block-online.md)、[AI 计算说明](operators/softmax/arithmetic-intensity.md)、[Roofline 分析](operators/softmax/roofline.md)、[行数与并行度](operators/softmax/row-scaling.md)、[Cluster 对照](operators/softmax/cluster.md)

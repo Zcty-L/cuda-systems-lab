@@ -32,13 +32,13 @@
 ## 复现
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target dwconv_fp16_bench dwconv_test -j 8
 ./build/tools/device_query
-./build/tests/dwconv_test --dtype fp16 --kernel all --check-cpu --warmup 0 --iterations 1
+./build/tests/native/dwconv_test --dtype fp16 --kernel all --check-cpu --warmup 0 --iterations 1
 mkdir -p build/dwconv-fp16-prefetch
-./build/benchmarks/operators/dwconv_fp16_bench > build/dwconv-fp16-prefetch/run1.log
-./build/benchmarks/operators/dwconv_fp16_bench > build/dwconv-fp16-prefetch/run2.log
+./build/benchmarks/operators/dwconv/dwconv_fp16_bench > build/dwconv-fp16-prefetch/run1.log
+./build/benchmarks/operators/dwconv/dwconv_fp16_bench > build/dwconv-fp16-prefetch/run2.log
 ```
 
 19 组 CPU 参考正确性测试通过；两次扫描均对所有测速配置进行输出一致性校验。逐轮数据、设备信息和采样期间的时钟记录保存在忽略目录 `build/dwconv-fp16-prefetch/`。`summary` 行依次为 N、C、H、K、stride、版本、中位数、最小值、最大值，单位 µs。
@@ -112,7 +112,7 @@ RTX 5070 Ti Laptop（SM120）上，经 CMake 构建，针对 case 5、7、22、8
 ./build/tools/device_query
 cmake --build build --target dwconv_test -j 8
 for id in 5 7 22 8; do
-  ./build/tests/dwconv_test --case "$id" --kernel all --dtype fp16 --check-cpu --warmup 0 --iterations 1
+  ./build/tests/native/dwconv_test --case "$id" --kernel all --dtype fp16 --check-cpu --warmup 0 --iterations 1
 done
 ```
 

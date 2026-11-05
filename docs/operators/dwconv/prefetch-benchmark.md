@@ -103,18 +103,18 @@
 ## 复现
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=dwconv
 cmake --build build --target device_query dwconv_test dwconv_bench --parallel
 ./build/tools/device_query
 ctest --test-dir build -R '^dwconv_test$' --output-on-failure
 mkdir -p build/dwconv-bench
-./build/benchmarks/operators/dwconv_bench > build/dwconv-bench/run1.log
-./build/benchmarks/operators/dwconv_bench > build/dwconv-bench/run2.log
+./build/benchmarks/operators/dwconv/dwconv_bench > build/dwconv-bench/run1.log
+./build/benchmarks/operators/dwconv/dwconv_bench > build/dwconv-bench/run2.log
 ```
 
 可另开终端运行 `nvidia-smi --query-gpu=timestamp,temperature.gpu,clocks.sm,clocks.mem,power.draw,utilization.gpu --format=csv -l 1` 记录遥测，测量后结束。原始逐轮数据及遥测仅保存在被忽略的 `build/dwconv-bench/`。
 
-基准入口：[dwconv_bench.cu](../../../benchmarks/operators/dwconv_bench.cu)。后续若继续优化，优先检查寄存器占用与实际指令调度；此次结果不支持直接认定输入预取方案更快。
+基准入口：[dwconv_bench.cu](../../../benchmarks/operators/dwconv/dwconv_bench.cu)。后续若继续优化，优先检查寄存器占用与实际指令调度；此次结果不支持直接认定输入预取方案更快。
 
 ## H=W=128 大 batch 补充测量
 
@@ -177,6 +177,6 @@ mkdir -p build/dwconv-bench
 ```bash
 cmake --build build --target dwconv_bench device_query --parallel
 ./build/tools/device_query
-./build/benchmarks/operators/dwconv_bench --large-batch > build/dwconv-bench/large-run1.log
-./build/benchmarks/operators/dwconv_bench --large-batch > build/dwconv-bench/large-run2.log
+./build/benchmarks/operators/dwconv/dwconv_bench --large-batch > build/dwconv-bench/large-run1.log
+./build/benchmarks/operators/dwconv/dwconv_bench --large-batch > build/dwconv-bench/large-run2.log
 ```

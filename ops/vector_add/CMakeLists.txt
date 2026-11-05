@@ -1,9 +1,1 @@
-add_library(cuda_ops_vector_add STATIC vector_add.cu)
-
-target_include_directories(
-    cuda_ops_vector_add
-    PUBLIC
-        ${PROJECT_SOURCE_DIR}/include
-)
-
-target_link_libraries(cuda_ops_vector_add PUBLIC CUDA::cudart)
+cuda_lab_add_operator(vector_add SOURCES vector_add.cu)

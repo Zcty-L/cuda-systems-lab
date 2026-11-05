@@ -19,12 +19,12 @@ INT8 → FP32、INT8 → INT8 继续支持 `1 <= cols <= 1024`，使用 warp 实
 从仓库根目录执行：
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCUDA_LAB_OPS=softmax
 cmake --build build --parallel
 ctest --test-dir build -R softmax_test --output-on-failure
-./build/benchmarks/operators/softmax_bench
+./build/benchmarks/operators/softmax/softmax_bench
 ```
 
 性能基线与环境见 [导入基线](../../docs/operators/softmax/baseline.md)，宽行实现的验证与测量见 [block 与 online-softmax](../../docs/operators/softmax/block-online.md)。
 
-基准输出平均耗时、计算强度 AI 与 GFLOP/s；估算口径见 [AI 计算说明](../../docs/operators/softmax/arithmetic-intensity.md)。可用 `softmax_bench --rows 4096 --cols 1024` 单独运行一种 FP32 配置；默认 512 行，仅传 `--rows` 时会以该行数运行全部 FP32 和 INT8 配置。硬件上限和瓶颈采样使用 `benchmarks/operators/softmax_roofline.py`，支持 `--rows`、`--cols` 列表的所有组合；复现方法见 [Roofline 分析](../../docs/operators/softmax/roofline.md)，增大行数的实验见 [行数与并行度](../../docs/operators/softmax/row-scaling.md)。
+基准输出平均耗时、计算强度 AI 与 GFLOP/s；估算口径见 [AI 计算说明](../../docs/operators/softmax/arithmetic-intensity.md)。可用 `softmax_bench --rows 4096 --cols 1024` 单独运行一种 FP32 配置；默认 512 行，仅传 `--rows` 时会以该行数运行全部 FP32 和 INT8 配置。硬件上限和瓶颈采样使用 `benchmarks/operators/softmax/softmax_roofline.py`，支持 `--rows`、`--cols` 列表的所有组合；复现方法见 [Roofline 分析](../../docs/operators/softmax/roofline.md)，增大行数的实验见 [行数与并行度](../../docs/operators/softmax/row-scaling.md)。
