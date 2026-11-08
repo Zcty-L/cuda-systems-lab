@@ -29,7 +29,8 @@ struct Options
 {
     std::string kernel = "baseline", dtype = "fp32", layout = "nchw";
     int case_index = -1, warmup = 20, iterations = 100, samples = 5;
-    bool check_cpu = false, list = false, quick = false;
+    int cudnn_candidate = -1; // 仅供 profiling 重放同配置的候选；默认正常选优。
+    bool check_cpu = false, list = false, quick = false, profile = false;
 };
 
 struct Stream

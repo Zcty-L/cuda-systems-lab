@@ -1,6 +1,7 @@
 #include "common.h"
 #include "data.h"
 #include <cuda_lab/cuda_check.cuh>
+#include <cuda_profiler_api.h>
 #include <iomanip>
 #include <sstream>
 
@@ -94,6 +95,25 @@ void emit_result(size_t id, const std::string &kernel, const std::string &dtype,
 {
     std::ostringstream output;
     output << std::setprecision(12);
+
+    if(options.profile)
+    {
+        // Profiling 不产生 Event 耗时，使用独立标记，避免批量测速脚本误收集。
+        output << "DWCONV_PROFILE {\"schema_version\":1,\"status\":" << json_string(result.status) << ",\"case\":" << id
+               << ",\"kernel\":" << json_string(kernel) << ",\"dtype\":" << json_string(dtype)
+               << ",\"layout\":" << json_string(options.layout)
+               << ",\"timing_mode\":\"profile\",\"warmup\":" << options.warmup;
+        if(result.status == "pass")
+            output << ",\"prepare_ms\":" << result.prepare_ms << ",\"algo\":" << result.algorithm
+                   << ",\"engine\":" << result.engine << ",\"workspace_bytes\":"
+                   << (result.workspace_bytes ? std::to_string(*result.workspace_bytes) : "null");
+        else
+            output << ",\"reason\":" << json_string(result.reason);
+        output << '}';
+        std::cout << output.str() << '\n';
+        return;
+    }
+
     output << "DWCONV_RESULT {\"schema_version\":1,\"status\":" << json_string(result.status) << ",\"case\":" << id
            << ",\"kernel\":" << json_string(kernel) << ",\"dtype\":" << json_string(dtype)
            << ",\"layout\":" << json_string(options.layout)
@@ -126,12 +146,32 @@ void emit_result(size_t id, const std::string &kernel, const std::string &dtype,
 // NOTE:测速代码
 template <class Launch> void measure(Launch launch, const Options &options, cudaStream_t stream, Result &result)
 {
-    Events events;
     for(int i = 0; i < options.warmup; ++i)
         launch();
     check(cudaGetLastError());
     check(cudaStreamSynchronize(stream));
 
+    if(options.profile)
+    {
+        // ncu --profile-from-start off：仅抓最终方案的一次完整调用，保留内部所有 kernel。
+        check(cudaProfilerStart());
+        try
+        {
+            launch();
+            check(cudaGetLastError());
+            check(cudaStreamSynchronize(stream));
+        }
+        catch(...)
+        {
+            cudaProfilerStop();
+            throw;
+        }
+        check(cudaProfilerStop());
+        std::cout << "[Profiling] 已完成一次完整前向调用；准备、选优和预热在采集范围之外\n";
+        return;
+    }
+
+    Events events;
     for(int sample = 0; sample < options.samples; ++sample)
     {
         check(cudaEventRecord(events.start, stream));
@@ -226,11 +266,14 @@ void usage(const std::vector<Backend> &backends)
             std::cout << kernel << '|';
     std::cout << "all]\n"
                  "  [--dtype fp32|fp16|all] [--layout nchw|nhwc] [--case ID|all] [--quick] [--list-cases]\n"
-                 "  [--warmup N] [--iterations N] [--samples N] [--check-cpu] [--help]\n"
+                 "  [--warmup N] [--iterations N] [--samples N] [--check-cpu] [--profile] [--help]\n"
                  "默认 baseline / fp32 / nchw / 全部兼容 shape; 预热20次, 每样本100次, 采样5次。\n"
                  "Event 包围普通连续 launch, 报告每次调用的样本中位数；不使用 CUDA Graph。\n"
                  "每条结果输出 DWCONV_RESULT JSON, 含 pass/skip/error; --check-cpu 在计时前校验。\n"
-                 "cuDNN 别名 cudnn-graph/cudnn-autotune 均归一化为 cudnn, 只测前向。\n";
+                 "cuDNN 别名 cudnn-graph/cudnn-autotune 均归一化为 cudnn, 只测前向。\n"
+                 "--profile 要求指定单个 case/kernel/dtype; 预热后仅执行一次前向，供 ncu 抓取。\n"
+                 "配合 ncu --profile-from-start off; 输出 DWCONV_PROFILE, 不生成 Event 测速结果。\n"
+                 "--cudnn-candidate N 仅配合 --profile, 重放同配置的候选 N, 跳过再次 autotune。\n";
 }
 
 } // namespace
@@ -263,8 +306,13 @@ int run_benchmarks(int argc, char **argv, const std::vector<Backend> &backends)
                 options.check_cpu = true;
                 continue;
             }
+            if(arg == "--profile")
+            {
+                options.profile = true;
+                continue;
+            }
             if(arg != "--kernel" && arg != "--dtype" && arg != "--layout" && arg != "--case" && arg != "--warmup" &&
-               arg != "--iterations" && arg != "--samples")
+               arg != "--iterations" && arg != "--samples" && arg != "--cudnn-candidate")
                 throw std::invalid_argument("未知参数：" + arg);
             if(++i == argc)
                 throw std::invalid_argument("缺少参数值：" + arg);
@@ -281,6 +329,8 @@ int run_benchmarks(int argc, char **argv, const std::vector<Backend> &backends)
                 options.warmup = parse_number(val);
             else if(arg == "--iterations")
                 options.iterations = parse_number(val);
+            else if(arg == "--cudnn-candidate")
+                options.cudnn_candidate = parse_number(val);
             else
                 options.samples = parse_number(val);
         }
@@ -308,6 +358,12 @@ int run_benchmarks(int argc, char **argv, const std::vector<Backend> &backends)
                 print_shape(id, kShapeCases[id]);
             return 0;
         }
+
+        if(options.profile && (options.case_index < 0 || options.kernel == "all" || options.dtype == "all"))
+            throw std::invalid_argument("--profile 要求指定单个 --case、--kernel 和 --dtype");
+        if(options.cudnn_candidate >= 0 && (!options.profile || options.kernel.rfind("cudnn", 0) != 0))
+            throw std::invalid_argument("--cudnn-candidate 仅支持 --profile 下的单个 cuDNN 入口");
+
         int device_id = 0, runtime = 0;
         check(cudaGetDevice(&device_id));
         cudaDeviceProp device{};
@@ -315,7 +371,10 @@ int run_benchmarks(int argc, char **argv, const std::vector<Backend> &backends)
         check(cudaFree(nullptr));
         check(cudaRuntimeGetVersion(&runtime));
         std::cout << "[设备] " << device.name << " SM=" << device.major << '.' << device.minor << " CUDA=" << runtime
-                  << "\n[计时] mode=event; TRT 使用非默认流，其他前向使用默认流；包含普通 launch 的提交间隙\n";
+                  << (options.profile
+                          ? "\n[Profiling] mode=profile; cudaProfilerStart/Stop 包围一次完整前向调用\n"
+                          : "\n[计时] mode=event; TRT 使用非默认流，其他前向使用默认流；包含普通 launch 的提交间隙\n");
+
         int completed = 0, skipped = 0, failed = 0;
         for(size_t id = 0; id < case_count; ++id)
         {

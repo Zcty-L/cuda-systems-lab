@@ -58,3 +58,21 @@ python benchmarks/operators/dwconv/dwconv_full_bench.py --cases 7 5 4 401 8 --dt
 
 代码分工：[common.cpp](compare/common.cpp) 管理运行与计时，[data.h](compare/data.h) 管理输入及 CPU 参考，四个后端 `.cpp` 只负责兼容条件、准备与 launch；[runner.py](runner.py) 处理子进程协议，[reporting.py](reporting.py) 汇总 CSV。
 绘图使用 [dwconv_plot.py](dwconv_plot.py) 的 `--csv`、`--dtype`、`--layout` 参数。测量规范见[公共说明](../../README.md)，历史报告与结果见[文档索引](../../../docs/README.md)。旧专项 `.cu`、测试程序和两个 cuDNN 专项脚本已退役；历史 Graph 数据与当前 Event 口径分别保留，未重新测量。
+
+## cuDNN kernel 与 SASS
+
+跨输入查看分派时，先轻量扫描代表 case，再仅为新增符号采集完整指标：
+
+```bash
+python benchmarks/operators/dwconv/dwconv_cudnn_scan.py --output build/dwconv-cudnn-survey/scan
+python benchmarks/operators/dwconv/dwconv_cudnn_profile.py \
+    --scan-results build/dwconv-cudnn-survey/scan --output build/dwconv-cudnn-survey/ncu
+```
+
+[扫描脚本](dwconv_cudnn_scan.py) 默认 12 个 case × 4 个入口 × FP32/FP16 × NCHW/NHWC，共 192 组，串行保存选优后一次完整前向的 kernel 序列、完整符号与 launch 配置；`--resume` 仅复用同配置、同二进制且原始文件核验通过的成功项。`--cases`、`--kernels`、`--dtypes`、`--layouts` 可缩小范围。
+
+[NCU 脚本](dwconv_cudnn_profile.py) 根据扫描结果选择覆盖新增符号的代表组，重放相同候选并核对实际 kernel 序列；`--reuse-reports <已有NCU目录>` 可复用同 GPU/SM、cuDNN 版本的 SASS，覆盖情况保存在 `coverage.json`。不传 `--scan-results` 时，仍默认完整抓取 case 7 的 16 种接口组合。
+
+NCU 使用 `--set full --page details --print-details all`，保留 `.ncu-rep`、详细指标、raw CSV、独立 `sass/kernel-<ID>.sass`、session 和运行命令。不同输入的实际调用见[分派调查](../../../docs/operators/dwconv/cudnn-kernel-dispatch.md)。
+
+C++ `--profile` 在准备、选优和预热后用 `cudaProfilerStart/Stop` 包围一次完整前向，独立输出 `DWCONV_PROFILE`；`--cudnn-candidate N` 仅供同配置的 profiling 重放，不能作为跨输入或版本的候选标识。case 7 首轮结果见[原始分析记录](../../../docs/operators/dwconv/cudnn-kernels-sass.md)。

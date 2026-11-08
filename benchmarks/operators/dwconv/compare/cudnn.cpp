@@ -21,6 +21,10 @@ class CudnnOperation final : public ForwardOperation
         if(context.kernel == "cudnn-heuristic" || context.kernel == "cudnn-fused")
             config.selection = CudnnPlanSelection::Heuristic;
 
+        const bool replay_candidate = context.options.cudnn_candidate >= 0;
+        if(replay_candidate && config.selection == CudnnPlanSelection::Autotune)
+            config.selection = CudnnPlanSelection::Enumerate;
+
         const bool autotune = config.selection == CudnnPlanSelection::Autotune;
         output_nhwc = config.layout == CudnnLayout::NHWC;
         fp16_tolerance = 2e-3;
@@ -38,7 +42,10 @@ class CudnnOperation final : public ForwardOperation
 
         forward_->bind(context.input, context.weights, context.bias, context.output);
 
-        if(autotune)
+        // 索引只用于同设备、库版本和配置的 profiling 重放；采集脚本还要核对实际 kernel 序列。
+        if(replay_candidate)
+            forward_->select_candidate(size_t(context.options.cudnn_candidate));
+        else if(autotune)
             forward_->autotune();
 
         // 首次执行验证支持情况并完成库的懒初始化。
@@ -47,6 +54,14 @@ class CudnnOperation final : public ForwardOperation
         algorithm = selected.algorithm;
         engine = selected.engine;
         workspace_bytes = selected.workspace_bytes;
+
+        const auto candidate = forward_->candidates().at(selected.selected_candidate);
+        std::cout << "[cuDNN 最终方案] version=" << selected.version << " algo=" << selected.algorithm
+                  << " engine=" << selected.engine << " candidate=" << selected.selected_candidate << '/'
+                  << selected.candidate_count << " math_type=" << candidate.math_type
+                  << " deterministic=" << candidate.deterministic << " workspace=" << selected.workspace_bytes
+                  << " plan_workspace=" << selected.plan_workspace_bytes << " layout=" << context.options.layout
+                  << " TF32=" << config.allow_tf32 << " workspace_limit=" << config.workspace_limit_bytes << '\n';
     }
 
     void launch() override
