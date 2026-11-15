@@ -52,7 +52,7 @@ struct CudnnForwardOptions
     // 仅用于 Graph，默认收集 A/B/Fallback 的全部可用候选。
     std::vector<CudnnHeuristicMode> heuristics{CudnnHeuristicMode::A, CudnnHeuristicMode::B,
                                                CudnnHeuristicMode::Fallback};
-    size_t workspace_limit_bytes = size_t(256) * 1024 * 1024; // 256MB
+    size_t workspace_limit_bytes = size_t(4) * 1024 * 1024 * 1024; // 4 GiB
     bool deterministic = false;
     bool allow_tf32 = true; // 仅影响 FP32；关闭时限制为 FMA，FP16 Tensor Core 路径保持不变。
     CudnnAutotuneOptions tuning;

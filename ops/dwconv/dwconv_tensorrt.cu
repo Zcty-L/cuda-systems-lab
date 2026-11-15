@@ -10,7 +10,7 @@
 namespace
 {
 
-constexpr size_t kWorkspaceLimit = 256ULL << 20;
+constexpr size_t kWorkspaceLimit = 4ULL << 30;
 constexpr int kBuilderOptimizationLevel = 5;
 constexpr int kMaxAuxStreams = 0;
 

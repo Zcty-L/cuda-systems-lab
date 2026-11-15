@@ -38,7 +38,7 @@ struct PytorchForwardOptions
     bool benchmark = false;
     bool deterministic = false; // 对应 Torch 两个确定性开关 OR 后的有效值。
     bool allow_tf32 = true;
-    size_t workspace_limit_bytes = size_t(256) * 1024 * 1024;
+    size_t workspace_limit_bytes = size_t(4) * 1024 * 1024 * 1024;
 };
 
 // 纯元数据选择器的环境输入，可在不创建 CUDA/cuDNN 上下文时测试后端决策。
